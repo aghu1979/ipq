@@ -16,7 +16,7 @@
 #
 # 作者: Mary
 # 日期：20251201
-# 版本: 2.4 - 修复稀疏克隆后的目录移动问题
+# 版本: 2.5 - 修复 feeds 依赖问题，重构执行顺序
 # ==============================================================================
 
 # 设置严格模式
@@ -124,7 +124,26 @@ modify_basic_config() {
     log "基本配置 (IP、主机名、密码) 修改完成"
 }
 
-# 修改 LuCI 编译署名 (依赖 feeds)
+# 修改 Feeds 中的包 (依赖 feeds update)
+modify_feeds_packages() {
+    log "修改 Feeds 中的包..."
+    
+    # 修改 Tailscale Makefile
+    if [ -n "$TAILSCALE" ]; then
+        local tailscale_makefile="feeds/packages/net/tailscale/Makefile"
+        if [ -f "$tailscale_makefile" ]; then
+            log "修改 Tailscale Makefile..."
+            sed -i '/\/etc\/init\.d\/tailscale/d;/\/etc\/config\/tailscale/d;' "$tailscale_makefile" || log "警告: 修改 Tailscale Makefile 失败，但构建可继续"
+            log "Tailscale Makefile 修改完成"
+        else
+            log "警告: Tailscale Makefile '$tailscale_makefile' 不存在，跳过修改。"
+        fi
+    fi
+    
+    log "Feeds 包修改完成"
+}
+
+# 修改 LuCI 编译署名 (依赖 feeds update)
 modify_luci_signature() {
     log "修改 LuCI 编译署名..."
     
@@ -190,12 +209,8 @@ clone_packages() {
     # 特殊硬件支持
     [ -n "$ATHENA_LED" ] && git clone "$ATHENA_LED" package/luci-app-athena-led && chmod +x package/luci-app-athena-led/root/etc/init.d/athena_led package/luci-app-athena-led/root/usr/sbin/athena-led
     
-    # 网络工具与服务（特殊处理）
-    if [ -n "$TAILSCALE" ]; then
-        sed -i '/\/etc\/init\.d\/tailscale/d;/\/etc\/config\/tailscale/d;' feeds/packages/net/tailscale/Makefile
-        git clone "$TAILSCALE" package/luci-app-tailscale
-    fi
-    
+    # 网络工具与服务（特殊处理，移除了 sed 命令）
+    [ -n "$TAILSCALE" ] && git clone "$TAILSCALE" package/luci-app-tailscale
     [ -n "$VNT" ] && git clone "$VNT" package/luci-app-vnt
     
     # 备用软件源
@@ -316,7 +331,10 @@ main() {
     # 6. 更新 feeds
     update_feeds
     
-    # 7. 修改 LuCI 编译署名 (必须在 feeds update 之后)
+    # 7. 修改 Feeds 中的包 (必须在 feeds update 之后)
+    modify_feeds_packages
+    
+    # 8. 修改 LuCI 编译署名 (必须在 feeds update 之后)
     modify_luci_signature
     
     log "OpenWrt 自定义构建完成"
