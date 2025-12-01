@@ -16,7 +16,7 @@
 #
 # 作者: Mary
 # 日期：20251201
-# 版本: 2.5 - 修复 feeds 依赖问题，重构执行顺序
+# 版本: 2.6 - 最终修复所有 feeds 依赖的执行顺序
 # ==============================================================================
 
 # 设置严格模式
@@ -184,18 +184,18 @@ clone_packages() {
     [ -n "$DDNS_GO" ] && git clone "$DDNS_GO" package/luci-app-ddns-go
     [ -n "$LUCKY" ] && git clone "$LUCKY" package/luci-app-lucky
     [ -n "$EASYTIER" ] && git clone "$EASYTIER" package/luci-app-easytier
-    [ -n "$GECOOSAC" ] && git clone "$GECOOSAC" package/openwrt-gecoosac
+    [ -n "$GECOOSAC" ] && git clone "$GECOOSAC" package/openwrt-gecoosac"
     
     # 监控与测试工具
     [ -n "$NETDATA" ] && git clone "$NETDATA" package/luci-app-netdata
-    [ -n "$NETSPEEDTEST" ] && git clone "$NETSPEEDTEST" package/luci-app-netspeedtest
+    [ -n "$NETSPEEDTEST" ] && git clone "$NETSPEEDTEST" package/luci-app-netspeedtest"
     
     # 系统管理工具
-    [ -n "$PARTEXP" ] && git clone "$PARTEXP" package/luci-app-partexp
-    [ -n "$TASKPLAN" ] && git clone "$TASKPLAN" package/luci-app-taskplan
-    [ -n "$QUICKFILE" ] && git clone "$QUICKFILE" package/luci-app-quickfile
-    [ -n "$WECHATPUSH" ] && git clone "$WECHATPUSH" package/luci-app-wechatpush
-    [ -n "$OPENAPPFILTER" ] && git clone "$OPENAPPFILTER" package/luci-app-oaf
+    [ -n "$PARTEXP" ] && git clone "$PARTEXP" package/luci-app-partexp"
+    [ -n "$TASKPLAN" ] && git clone "$TASKPLAN" package/luci-app-taskplan"
+    [ -n "$QUICKFILE" ] && git clone "$QUICKFILE" package/luci-app-quickfile"
+    [ -n "$WECHATPUSH" ] && git clone "$WECHATPUSH" package/luci-app-wechatpush"
+    [ -n "$OPENAPPFILTER" ] && git clone "$OPENAPPFILTER" package/luci-app-oaf"
     
     # 主题
     [ -n "$ARGON" ] && git clone "$ARGON" feeds/luci/themes/luci-theme-argon
@@ -211,7 +211,7 @@ clone_packages() {
     
     # 网络工具与服务（特殊处理，移除了 sed 命令）
     [ -n "$TAILSCALE" ] && git clone "$TAILSCALE" package/luci-app-tailscale
-    [ -n "$VNT" ] && git clone "$VNT" package/luci-app-vnt
+    [ -n "$VNT" ] && git clone "$VNT" package/luci-app-vnt"
     
     # 备用软件源
     [ -n "$SMALL_PACKAGE" ] && git clone "$SMALL_PACKAGE" small
@@ -270,12 +270,12 @@ sparse_clone_special_packages() {
     log "稀疏克隆完成"
 }
 
-# 移除冲突的默认包
+# 移除冲突的默认包 (依赖 feeds update)
 remove_conflicting_packages() {
     log "移除冲突的默认包..."
     
     # 移除 luci-app-attendedsysupgrade
-    sed -i "/attendedsysupgrade/d" $(find ./feeds/luci/collections/ -type f -name "Makefile") || error_exit "移除 luci-app-attendedsysupgrade 失败"
+    sed -i "/attendedsysupgrade/d" $(find ./feeds/luci/collections/ -type f -name "Makefile" 2>/dev/null) || log "警告: 移除 luci-app-attendedsysupgrade 失败，可能文件不存在。"
     
     # 移除要替换的包
     local packages=(
@@ -325,11 +325,11 @@ main() {
     # 4. 稀疏克隆特殊软件包
     sparse_clone_special_packages
     
-    # 5. 移除冲突的默认包
-    remove_conflicting_packages
-    
-    # 6. 更新 feeds
+    # 5. 更新 feeds
     update_feeds
+    
+    # 6. 移除冲突的默认包 (必须在 feeds update 之后)
+    remove_conflicting_packages
     
     # 7. 修改 Feeds 中的包 (必须在 feeds update 之后)
     modify_feeds_packages
