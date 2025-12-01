@@ -16,7 +16,7 @@
 #
 # 作者: Mary
 # 日期：20251201
-# 版本: 2.3 - 添加初始登录密码设置为空
+# 版本: 2.4 - 修复稀疏克隆后的目录移动问题
 # ==============================================================================
 
 # 设置严格模式
@@ -118,7 +118,7 @@ modify_basic_config() {
         sed -i 's/^root:[^:]*:/root::/' "$shadow_file" || error_exit "修改登录密码失败"
         log "初始登录密码已设置为空"
     else
-        log_warn "警告: shadow 文件 '$shadow_file' 不存在，跳过修改登录密码。"
+        log "警告: shadow 文件 '$shadow_file' 不存在，跳过修改登录密码。"
     fi
     
     log "基本配置 (IP、主机名、密码) 修改完成"
@@ -134,7 +134,7 @@ modify_luci_signature() {
         sed -i "s/(\(luciversion || ''\))/(\1) + (' \/ $BUILD_SIGNATURE')/g" "$luci_status_file" || error_exit "修改编译署名失败"
         log "LuCI 编译署名修改成功"
     else
-        log_warn "警告: LuCI 状态文件 '$luci_status_file' 不存在，跳过修改编译署名。"
+        log "警告: LuCI 状态文件 '$luci_status_file' 不存在，跳过修改编译署名。"
     fi
 }
 
@@ -172,23 +172,23 @@ clone_packages() {
     [ -n "$NETSPEEDTEST" ] && git clone "$NETSPEEDTEST" package/luci-app-netspeedtest
     
     # 系统管理工具
-    [ -n "$PARTEXP" ] && git clone "$PARTEXP" package/luci-app-partexp"
-    [ -n "$TASKPLAN" ] && git clone "$TASKPLAN" package/luci-app-taskplan"
-    [ -n "$QUICKFILE" ] && git clone "$QUICKFILE" package/luci-app-quickfile"
-    [ -n "$WECHATPUSH" ] && git clone "$WECHATPUSH" package/luci-app-wechatpush"
-    [ -n "$OPENAPPFILTER" ] && git clone "$OPENAPPFILTER" package/luci-app-oaf"
+    [ -n "$PARTEXP" ] && git clone "$PARTEXP" package/luci-app-partexp
+    [ -n "$TASKPLAN" ] && git clone "$TASKPLAN" package/luci-app-taskplan
+    [ -n "$QUICKFILE" ] && git clone "$QUICKFILE" package/luci-app-quickfile
+    [ -n "$WECHATPUSH" ] && git clone "$WECHATPUSH" package/luci-app-wechatpush
+    [ -n "$OPENAPPFILTER" ] && git clone "$OPENAPPFILTER" package/luci-app-oaf
     
     # 主题
-    [ -n "$ARGON" ] && git clone "$ARGON" feeds/luci/themes/luci-theme-argon"
+    [ -n "$ARGON" ] && git clone "$ARGON" feeds/luci/themes/luci-theme-argon
     [ -n "$AURORA" ] && git clone "$AURORA" feeds/luci/themes/luci-theme-aurora"
     
     # DNS 相关
-    [ -n "$MOSDNS" ] && git clone -b "${MOSDNS#*;}" "${MOSDNS%;*}" package/luci-app-mosdns"
-    [ -n "$OPENLIST2" ] && git clone "$OPENLIST2" package/luci-app-openlist2"
+    [ -n "$MOSDNS" ] && git clone -b "${MOSDNS#*;}" "${MOSDNS%;*}" package/luci-app-mosdns
+    [ -n "$OPENLIST2" ] && git clone "$OPENLIST2" package/luci-app-openlist2
     [ -n "$GOLANG" ] && git clone -b "${GOLANG#*;}" "${GOLANG%;*}" feeds/packages/lang/golang"
     
     # 特殊硬件支持
-    [ -n "$ATHENA_LED" ] && git clone "$ATHENA_LED" package/luci-app-athena-led" && chmod +x package/luci-app-athena-led/root/etc/init.d/athena_led package/luci-app-athena-led/root/usr/sbin/athena-led
+    [ -n "$ATHENA_LED" ] && git clone "$ATHENA_LED" package/luci-app-athena-led && chmod +x package/luci-app-athena-led/root/etc/init.d/athena_led package/luci-app-athena-led/root/usr/sbin/athena-led
     
     # 网络工具与服务（特殊处理）
     if [ -n "$TAILSCALE" ]; then
@@ -196,7 +196,7 @@ clone_packages() {
         git clone "$TAILSCALE" package/luci-app-tailscale
     fi
     
-    [ -n "$VNT" ] && git clone "$VNT" package/luci-app-vnt"
+    [ -n "$VNT" ] && git clone "$VNT" package/luci-app-vnt
     
     # 备用软件源
     [ -n "$SMALL_PACKAGE" ] && git clone "$SMALL_PACKAGE" small
@@ -234,10 +234,14 @@ sparse_clone_special_packages() {
     # 稀疏克隆 frp 和相关 luci 应用
     if [ -n "$FRP_REPO" ]; then
         git_sparse_clone "frp" "$FRP_REPO" "net/frp"
+        # 修复：确保目标目录存在
+        mkdir -p feeds/packages/net
         mv -f package/frp feeds/packages/net/frp || error_exit "移动 frp 包失败"
         
         if [ -n "$FRPC_LUCI_REPO" ]; then
             git_sparse_clone "frp" "$FRPC_LUCI_REPO" "applications/luci-app-frpc" "applications/luci-app-frps"
+            # 修复：确保目标目录存在
+            mkdir -p feeds/luci/applications
             mv -f package/luci-app-frpc feeds/luci/applications/luci-app-frpc || error_exit "移动 luci-app-frpc 包失败"
             mv -f package/luci-app-frps feeds/luci/applications/luci-app-frps || error_exit "移动 luci-app-frps 包失败"
         fi
