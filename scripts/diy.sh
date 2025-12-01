@@ -16,7 +16,7 @@
 #
 # 作者: Mary
 # 日期：20251201
-# 版本: 2.7 - 增加 feeds.conf.default 内容验证
+# 版本: 2.8 - 修复 feeds.conf.default 语法错误
 # ==============================================================================
 
 # 设置严格模式
@@ -47,9 +47,9 @@ BUILD_SIGNATURE="Built by Mary"
 # 网络代理相关软件源
 PASSWALL_PACKAGES="https://github.com/xiaorouji/openwrt-passwall-packages.git;main"
 PASSWALL_LUCI="https://github.com/xiaorouji/openwrt-passwall.git;main"
-PASSWALL2_LUCI="https://github.com/xiaorouji/openwrt-passwall2.git;main"
+PASSWALL2="https://github.com/xiaorouji/openwrt-passwall2.git;main" # 修正：feed 名应为 passwall2
 OPENCLASH="https://github.com/vernesong/OpenClash.git"
-HOMEPROXY="https://github.com/VIKINGYFY/homeproxy" # 修正：确保仓库地址正确
+HOMEPROXY="https://github.com/VIKINGYFY/homeproxy"
 MOMO="https://github.com/nikkinikki-org/OpenWrt-momo;main"
 NIKKI="https://github.com/nikkinikki-org/OpenWrt-nikki;main"
 
@@ -164,7 +164,8 @@ add_feeds() {
     # 添加代理相关 feeds
     [ -n "$PASSWALL_PACKAGES" ] && echo "src-git passwall_packages $PASSWALL_PACKAGES" >> "feeds.conf.default"
     [ -n "$PASSWALL_LUCI" ] && echo "src-git passwall_luci $PASSWALL_LUCI" >> "feeds.conf.default"
-    [ -n "$PASSWALL2_LUCI" ] && echo "src-git luci-app-passwall2 $PASSWALL2_LUCI" >> "feeds.conf.default"
+    # 修复：使用正确的 feed 名称
+    [ -n "$PASSWALL2" ] && echo "src-git passwall2 $PASSWALL2" >> "feeds.conf.default"
     [ -n "$OPENCLASH" ] && echo "src-git luci-app-openclash $OPENCLASH" >> "feeds.conf.default"
     [ -n "$MOMO" ] && echo "src-git momo $MOMO" >> "feeds.conf.default"
     [ -n "$NIKKI" ] && echo "src-git nikki $NIKKI" >> "feeds.conf.default"
@@ -181,13 +182,13 @@ clone_packages() {
     
     # 网络工具与服务
     [ -n "$ADGUARDHOME" ] && git clone "$ADGUARDHOME" package/luci-app-adguardhome
-    [ -n "$DDNS_GO" ] && git clone "$DDNS_GO" package/luci-app-ddns-go
+    [ -n "$DDNS_GO" ] && git clone "$DDNS_GO" package/luci-app-ddns-go"
     [ -n "$LUCKY" ] && git clone "$LUCKY" package/luci-app-lucky
-    [ -n "$EASYTIER" ] && git clone "$EASYTIER" package/luci-app-easytier
+    [ -n "$EASYTIER" ] && git clone "$EASYTIER" package/luci-app-easytier"
     [ -n "$GECOOSAC" ] && git clone "$GECOOSAC" package/openwrt-gecoosac"
     
     # 监控与测试工具
-    [ -n "$NETDATA" ] && git clone "$NETDATA" package/luci-app-netdata
+    [ -n "$NETDATA" ] && git clone "$NETDATA" package/luci-app-netdata"
     [ -n "$NETSPEEDTEST" ] && git clone "$NETSPEEDTEST" package/luci-app-netspeedtest"
     
     # 系统管理工具
