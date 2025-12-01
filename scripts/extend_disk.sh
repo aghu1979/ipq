@@ -3,11 +3,11 @@
 # OpenWrt/ImmortalWrt 磁盘空间扩展脚本 (优化版)
 #
 # 功能:
-#   通过将大型构建目录软链接到容量更大的磁盘挂载点，
+#   通过将大型构建目录软链接到容量更大且可写的磁盘挂载点，
 #   解决 GitHub Actions 等环境中编译时磁盘空间不足的问题。
 #
 # 使用方法:
-#   ./extend_disk.sh [openwrt_source_directory] [options]
+#   ./scripts/extend_disk.sh [openwrt_source_directory] [options]
 #   参数:
 #     openwrt_source_directory: OpenWrt/ImmortalWrt 的源码目录路径。
 #                               如果不提供，默认为当前目录下的 'openwrt' 文件夹。
@@ -20,7 +20,7 @@
 #
 # 作者: Mary
 # 日期：20251201
-# 版本: 2.0 - 增加幂等性、可恢复性和可配置性
+# 版本: 2.1 - 修复挂载点选择逻辑，增加可写性检查
 # ==============================================================================
 
 # --- 脚本开始 ---
@@ -118,6 +118,34 @@ revert_links() {
     log "恢复操作完成"
 }
 
+# --- 优化：查找最佳且可写的挂载点 ---
+find_best_writable_mount_point() {
+    local min_size_kb=$((MIN_SIZE_GB * 1024 * 1024)) # 转换为 KB
+    local best_mount=""
+    local best_size=0
+
+    log "正在扫描可用且可写的挂载点 (最小空间: ${MIN_SIZE_GB}GB)..."
+
+    # 使用 df -k 获取以KB为单位的精确大小，并逐行处理
+    while read -r filesystem blocks used available use_percent mount; do
+        # 跳过标题行、根目录、tmpfs 和其他特殊文件系统
+        if [[ "$filesystem" == "Filesystem" || "$mount" == "/" || "$filesystem" == "tmpfs" || "$filesystem" == "devtmpfs" || "$filesystem" == "overlay" ]]; then
+            continue
+        fi
+
+        # 检查空间和可写性
+        if [ "$available" -gt "$min_size_kb" ] && [ -w "$mount" ]; then
+            log "发现候选挂载点: $mount (可用空间: $((available / 1024 / 1024))GB)"
+            if [ "$available" -gt "$best_size" ]; then
+                best_size="$available"
+                best_mount="$mount"
+            fi
+        fi
+    done < <(df -k | tail -n +2) # tail -n +2 跳过 df 的标题行
+
+    echo "$best_mount"
+}
+
 # --- 核心逻辑：查找挂载点并移动/链接目录 ---
 extend_disk() {
     log "源码目录: $SOURCE_DIR"
@@ -135,22 +163,13 @@ extend_disk() {
     df -h /
     echo "--------------------------------------------------"
 
-    # 2. 查找最佳挂载点
-    log "查找最佳挂载点..."
-    TARGET_MOUNT_POINT=$(df -h | awk -v min_size="$MIN_SIZE_GB" '
-    NR>1 && $1!="tmpfs" && $6!="/" {
-        gsub(/G/, "", $4);
-        gsub(/M/, "0.001", $4);
-        gsub(/K/, "0.000001", $4);
-        if($4 > min_size) {
-            print $4, $6
-        }
-    }
-' | sort -nr | head -n 1 | awk '{print $2}')
+    # 2. 查找最佳且可写的挂载点
+    TARGET_MOUNT_POINT=$(find_best_writable_mount_point)
 
     if [ -z "$TARGET_MOUNT_POINT" ]; then
-        log "警告: 未找到满足 ${MIN_SIZE_GB}GB 的辅助挂载点。将回退到根目录，这可能导致空间不足。"
-        TARGET_MOUNT_POINT="/"
+        log "警告: 未找到满足条件的辅助挂载点。将回退到源码目录所在磁盘，这可能导致空间不足。"
+        # 回退策略：使用源码目录所在的挂载点
+        TARGET_MOUNT_POINT=$(df "$SOURCE_DIR" | tail -1 | awk '{print $6}')
     else
         log "找到最佳挂载点: $TARGET_MOUNT_POINT"
     fi
@@ -158,7 +177,7 @@ extend_disk() {
     # 准备外部构建目录
     BUILD_DIR="$TARGET_MOUNT_POINT/openwrt-build-$(date +%s)"
     log "在 $TARGET_MOUNT_POINT 上创建构建目录: $BUILD_DIR"
-    mkdir -p "$BUILD_DIR"
+    mkdir -p "$BUILD_DIR" || error_exit "无法创建构建目录 $BUILD_DIR，请检查权限。"
 
     # 3. 移动并链接大目录
     log "移动并链接大型构建目录..."
