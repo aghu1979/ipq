@@ -16,7 +16,7 @@
 #
 # 作者: Mary
 # 日期：20251201
-# 版本: 2.1 - 合并配置文件，优化软件源选择
+# 版本: 2.3 - 添加初始登录密码设置为空
 # ==============================================================================
 
 # 设置严格模式
@@ -98,9 +98,9 @@ FRPC_LUCI_REPO="https://github.com/laipeng668/luci"
 # 主要功能函数
 # ==============================================================================
 
-# 修改基本配置
+# 修改基本配置 (不依赖 feeds)
 modify_basic_config() {
-    log "修改基本配置..."
+    log "修改基本配置 (IP、主机名、密码)..."
     
     # 修改默认 IP
     sed -i "s/192.168.1.1/$DEFAULT_IP/g" package/base-files/files/bin/config_generate || error_exit "修改默认 IP 失败"
@@ -108,10 +108,34 @@ modify_basic_config() {
     # 修改主机名
     sed -i "s/hostname='.*'/hostname='$HOSTNAME'/g" package/base-files/files/bin/config_generate || error_exit "修改主机名失败"
     
-    # 修改编译署名
-    sed -i "s/(\(luciversion || ''\))/(\1) + (' \/ $BUILD_SIGNATURE')/g" feeds/luci/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js || error_exit "修改编译署名失败"
+    # 修改初始登录密码为空
+    log "设置初始登录密码为空..."
+    local shadow_file="package/base-files/files/etc/shadow"
+    if [ -f "$shadow_file" ]; then
+        # 将root用户的密码字段清空
+        # 格式: root:<password_field>:...
+        # 修改为: root::...
+        sed -i 's/^root:[^:]*:/root::/' "$shadow_file" || error_exit "修改登录密码失败"
+        log "初始登录密码已设置为空"
+    else
+        log_warn "警告: shadow 文件 '$shadow_file' 不存在，跳过修改登录密码。"
+    fi
     
-    log "基本配置修改完成"
+    log "基本配置 (IP、主机名、密码) 修改完成"
+}
+
+# 修改 LuCI 编译署名 (依赖 feeds)
+modify_luci_signature() {
+    log "修改 LuCI 编译署名..."
+    
+    local luci_status_file="feeds/luci/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js"
+    
+    if [ -f "$luci_status_file" ]; then
+        sed -i "s/(\(luciversion || ''\))/(\1) + (' \/ $BUILD_SIGNATURE')/g" "$luci_status_file" || error_exit "修改编译署名失败"
+        log "LuCI 编译署名修改成功"
+    else
+        log_warn "警告: LuCI 状态文件 '$luci_status_file' 不存在，跳过修改编译署名。"
+    fi
 }
 
 # 添加 feeds
@@ -148,18 +172,18 @@ clone_packages() {
     [ -n "$NETSPEEDTEST" ] && git clone "$NETSPEEDTEST" package/luci-app-netspeedtest
     
     # 系统管理工具
-    [ -n "$PARTEXP" ] && git clone "$PARTEXP" package/luci-app-partexp
-    [ -n "$TASKPLAN" ] && git clone "$TASKPLAN" package/luci-app-taskplan
-    [ -n "$QUICKFILE" ] && git clone "$QUICKFILE" package/luci-app-quickfile
-    [ -n "$WECHATPUSH" ] && git clone "$WECHATPUSH" package/luci-app-wechatpush
-    [ -n "$OPENAPPFILTER" ] && git clone "$OPENAPPFILTER" package/luci-app-oaf
+    [ -n "$PARTEXP" ] && git clone "$PARTEXP" package/luci-app-partexp"
+    [ -n "$TASKPLAN" ] && git clone "$TASKPLAN" package/luci-app-taskplan"
+    [ -n "$QUICKFILE" ] && git clone "$QUICKFILE" package/luci-app-quickfile"
+    [ -n "$WECHATPUSH" ] && git clone "$WECHATPUSH" package/luci-app-wechatpush"
+    [ -n "$OPENAPPFILTER" ] && git clone "$OPENAPPFILTER" package/luci-app-oaf"
     
     # 主题
-    [ -n "$ARGON" ] && git clone "$ARGON" feeds/luci/themes/luci-theme-argon
+    [ -n "$ARGON" ] && git clone "$ARGON" feeds/luci/themes/luci-theme-argon"
     [ -n "$AURORA" ] && git clone "$AURORA" feeds/luci/themes/luci-theme-aurora"
     
     # DNS 相关
-    [ -n "$MOSDNS" ] && git clone -b "${MOSDNS#*;}" "${MOSDNS%;*}" package/luci-app-mosdns
+    [ -n "$MOSDNS" ] && git clone -b "${MOSDNS#*;}" "${MOSDNS%;*}" package/luci-app-mosdns"
     [ -n "$OPENLIST2" ] && git clone "$OPENLIST2" package/luci-app-openlist2"
     [ -n "$GOLANG" ] && git clone -b "${GOLANG#*;}" "${GOLANG%;*}" feeds/packages/lang/golang"
     
@@ -172,7 +196,7 @@ clone_packages() {
         git clone "$TAILSCALE" package/luci-app-tailscale
     fi
     
-    [ -n "$VNT" ] && git clone "$VNT" package/luci-app-vnt
+    [ -n "$VNT" ] && git clone "$VNT" package/luci-app-vnt"
     
     # 备用软件源
     [ -n "$SMALL_PACKAGE" ] && git clone "$SMALL_PACKAGE" small
@@ -270,23 +294,26 @@ update_feeds() {
 main() {
     log "开始 OpenWrt 自定义构建..."
     
-    # 修改基本配置
+    # 1. 修改基本配置 (不依赖 feeds)
     modify_basic_config
     
-    # 添加 feeds
+    # 2. 添加 feeds
     add_feeds
     
-    # 克隆软件包
+    # 3. 克隆软件包
     clone_packages
     
-    # 稀疏克隆特殊软件包
+    # 4. 稀疏克隆特殊软件包
     sparse_clone_special_packages
     
-    # 移除冲突的默认包
+    # 5. 移除冲突的默认包
     remove_conflicting_packages
     
-    # 更新 feeds
+    # 6. 更新 feeds
     update_feeds
+    
+    # 7. 修改 LuCI 编译署名 (必须在 feeds update 之后)
+    modify_luci_signature
     
     log "OpenWrt 自定义构建完成"
     log "注意: 最终编译的软件包由 .config 文件控制"
