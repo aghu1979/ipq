@@ -16,7 +16,7 @@
 #
 # 作者: Mary
 # 日期：20251201
-# 版本: 2.8 - 修复 feeds.conf.default 语法错误
+# 版本: 2.9 - 修复潜在的语法错误
 # ==============================================================================
 
 # 设置严格模式
@@ -47,18 +47,18 @@ BUILD_SIGNATURE="Built by Mary"
 # 网络代理相关软件源
 PASSWALL_PACKAGES="https://github.com/xiaorouji/openwrt-passwall-packages.git;main"
 PASSWALL_LUCI="https://github.com/xiaorouji/openwrt-passwall.git;main"
-PASSWALL2="https://github.com/xiaorouji/openwrt-passwall2.git;main" # 修正：feed 名应为 passwall2
+PASSWALL2="https://github.com/xiaorouji/openwrt-passwall2.git;main"
 OPENCLASH="https://github.com/vernesong/OpenClash.git"
 HOMEPROXY="https://github.com/VIKINGYFY/homeproxy"
 MOMO="https://github.com/nikkinikki-org/OpenWrt-momo;main"
 NIKKI="https://github.com/nikkinikki-org/OpenWrt-nikki;main"
 
 # 网络工具与服务
-ADGUARDHOME="https://github.com/sirpdboy/luci-app-adguardhome"  # 首选sirpdboy版本
+ADGUARDHOME="https://github.com/sirpdboy/luci-app-adguardhome"
 DDNS_GO="https://github.com/sirpdboy/luci-app-ddns-go"
-TAILSCALE="https://github.com/asvow/luci-app-tailscale"  # 官方推荐asvow版本
-VNT="https://github.com/lmq8267/luci-app-vnt"  # 官方无luci-app，使用lmq8267版本
-LUCKY="https://github.com/gdy666/luci-app-lucky"  # 使用原作者版本
+TAILSCALE="https://github.com/asvow/luci-app-tailscale"
+VNT="https://github.com/lmq8267/luci-app-vnt"
+LUCKY="https://github.com/gdy666/luci-app-lucky"
 EASYTIER="https://github.com/EasyTier/luci-app-easytier"
 GECOOSAC="https://github.com/lwb1978/openwrt-gecoosac"
 WOLPLUS="https://github.com/VIKINGYFY/packages;main"
@@ -112,9 +112,6 @@ modify_basic_config() {
     log "设置初始登录密码为空..."
     local shadow_file="package/base-files/files/etc/shadow"
     if [ -f "$shadow_file" ]; then
-        # 将root用户的密码字段清空
-        # 格式: root:<password_field>:...
-        # 修改为: root::...
         sed -i 's/^root:[^:]*:/root::/' "$shadow_file" || error_exit "修改登录密码失败"
         log "初始登录密码已设置为空"
     else
@@ -164,7 +161,6 @@ add_feeds() {
     # 添加代理相关 feeds
     [ -n "$PASSWALL_PACKAGES" ] && echo "src-git passwall_packages $PASSWALL_PACKAGES" >> "feeds.conf.default"
     [ -n "$PASSWALL_LUCI" ] && echo "src-git passwall_luci $PASSWALL_LUCI" >> "feeds.conf.default"
-    # 修复：使用正确的 feed 名称
     [ -n "$PASSWALL2" ] && echo "src-git passwall2 $PASSWALL2" >> "feeds.conf.default"
     [ -n "$OPENCLASH" ] && echo "src-git luci-app-openclash $OPENCLASH" >> "feeds.conf.default"
     [ -n "$MOMO" ] && echo "src-git momo $MOMO" >> "feeds.conf.default"
@@ -182,18 +178,18 @@ clone_packages() {
     
     # 网络工具与服务
     [ -n "$ADGUARDHOME" ] && git clone "$ADGUARDHOME" package/luci-app-adguardhome
-    [ -n "$DDNS_GO" ] && git clone "$DDNS_GO" package/luci-app-ddns-go"
+    [ -n "$DDNS_GO" ] && git clone "$DDNS_GO" package/luci-app-ddns-go
     [ -n "$LUCKY" ] && git clone "$LUCKY" package/luci-app-lucky
-    [ -n "$EASYTIER" ] && git clone "$EASYTIER" package/luci-app-easytier"
+    [ -n "$EASYTIER" ] && git clone "$EASYTIER" package/luci-app-easytier
     [ -n "$GECOOSAC" ] && git clone "$GECOOSAC" package/openwrt-gecoosac"
     
     # 监控与测试工具
-    [ -n "$NETDATA" ] && git clone "$NETDATA" package/luci-app-netdata"
+    [ -n "$NETDATA" ] && git clone "$NETDATA" package/luci-app-netdata
     [ -n "$NETSPEEDTEST" ] && git clone "$NETSPEEDTEST" package/luci-app-netspeedtest"
     
     # 系统管理工具
-    [ -n "$PARTEXP" ] && git clone "$PARTEXP" package/luci-app-partexp"
-    [ -n "$TASKPLAN" ] && git clone "$TASKPLAN" package/luci-app-taskplan"
+    [ -n "$PARTEXP" ] && git clone "$PARTEXP" package/luci-app-partexp
+    [ -n "$TASKPLAN" ] && git clone "$TASKPLAN" package/luci-app-taskplan
     [ -n "$QUICKFILE" ] && git clone "$QUICKFILE" package/luci-app-quickfile"
     [ -n "$WECHATPUSH" ] && git clone "$WECHATPUSH" package/luci-app-wechatpush"
     [ -n "$OPENAPPFILTER" ] && git clone "$OPENAPPFILTER" package/luci-app-oaf"
@@ -210,9 +206,9 @@ clone_packages() {
     # 特殊硬件支持
     [ -n "$ATHENA_LED" ] && git clone "$ATHENA_LED" package/luci-app-athena-led && chmod +x package/luci-app-athena-led/root/etc/init.d/athena_led package/luci-app-athena-led/root/usr/sbin/athena-led
     
-    # 网络工具与服务（特殊处理，移除了 sed 命令）
+    # 网络工具与服务（特殊处理）
     [ -n "$TAILSCALE" ] && git clone "$TAILSCALE" package/luci-app-tailscale
-    [ -n "$VNT" ] && git clone "$VNT" package/luci-app-vnt"
+    [ -n "$VNT" ] && git clone "$VNT" package/luci-app-vnt
     
     # 备用软件源
     [ -n "$SMALL_PACKAGE" ] && git clone "$SMALL_PACKAGE" small
@@ -250,13 +246,11 @@ sparse_clone_special_packages() {
     # 稀疏克隆 frp 和相关 luci 应用
     if [ -n "$FRP_REPO" ]; then
         git_sparse_clone "frp" "$FRP_REPO" "net/frp"
-        # 修复：确保目标目录存在
         mkdir -p feeds/packages/net
         mv -f package/frp feeds/packages/net/frp || error_exit "移动 frp 包失败"
         
         if [ -n "$FRPC_LUCI_REPO" ]; then
             git_sparse_clone "frp" "$FRPC_LUCI_REPO" "applications/luci-app-frpc" "applications/luci-app-frps"
-            # 修复：确保目标目录存在
             mkdir -p feeds/luci/applications
             mv -f package/luci-app-frpc feeds/luci/applications/luci-app-frpc || error_exit "移动 luci-app-frpc 包失败"
             mv -f package/luci-app-frps feeds/luci/applications/luci-app-frps || error_exit "移动 luci-app-frps 包失败"
@@ -304,7 +298,6 @@ remove_conflicting_packages() {
 
 # 更新 feeds
 update_feeds() {
-    # --- 新增：验证 feeds.conf.default ---
     log "验证 feeds.conf.default 内容..."
     if [ -f "feeds.conf.default" ]; then
         log "--- feeds.conf.default 文件内容如下 ---"
