@@ -13,7 +13,7 @@
 #
 # 作者: Mary
 # 日期：20251201
-# 版本: 2.3 - 采用核心依赖+动态补充的混合策略
+# 版本: 2.4 - 修复 Ubuntu 24.04 Python 依赖兼容性问题
 # ==============================================================================
 
 name: ImmortalWrt 自动编译系统
@@ -63,7 +63,8 @@ jobs:
 
         # --- 阶段一：安装核心依赖，确保基础环境可用 ---
         log_info "安装核心编译依赖..."
-        CORE_DEPS="build-essential libncurses5-dev libncursesw5-dev zlib1g-dev gawk git gettext libssl-dev xsltproc wget unzip python3 python3-distutils python3-pip python3-setuptools python3-wheel rsync"
+        # 修复：移除在 Ubuntu 24.04 中已弃用的 python3-distutils 和 python3-setuptools
+        CORE_DEPS="build-essential libncurses5-dev libncursesw5-dev zlib1g-dev gawk git gettext libssl-dev xsltproc wget unzip python3 python3-pip python3-wheel rsync"
         sudo -E apt-get -qq install -y $CORE_DEPS
         log_success "核心依赖安装完成"
 
