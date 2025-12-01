@@ -13,7 +13,7 @@
 #
 # 作者: Mary
 # 日期：20251201
-# 版本: 2.5 - 添加 jq 依赖以支持自动挂载
+# 版本: 2.6 - 内联 diy.sh 命令以绕过语法错误
 # ==============================================================================
 
 name: ImmortalWrt 自动编译系统
@@ -27,7 +27,7 @@ on:
         default: 'false'
         type: boolean
   # schedule:
-  #   - cron: 0 20 * * 4 # 每周四 UTC 20:00 自动编译
+  #   - cron: 0 20 * * 4 # 每周四 UTC20:00 自动编译
 
 env:
   REPO_URL: https://github.com/laipeng668/immortalwrt.git
@@ -141,7 +141,7 @@ jobs:
         restore-keys: |
           ${{ env.REPO_BRANCH }}-${{ hashFiles('configs/immu.config') }}-
 
-    - name: 加载自定义配置与生成报告
+    - name: 加载自定义配置与生成报告 (内联命令版)
       id: config
       run: |
         # --- 日志和颜色函数定义 ---
@@ -166,10 +166,107 @@ jobs:
         # 初始包列表
         grep "^CONFIG_PACKAGE_luci-app-.*=y" "$CONFIG_PATH" | sed 's/CONFIG_PACKAGE_\(.*\)=y/\1/' | sort > initial_luci.txt
         
-        # 执行 diy.sh
-        log_info "执行 diy.sh 准备软件源..."
-        chmod +x "${{ github.workspace }}/${{ env.DIY_SCRIPT }}"
-        "${{ github.workspace }}/${{ env.DIY_SCRIPT }}"
+        # 3. 执行 diy.sh 的所有命令 (内联版本)
+        log_info "执行 diy.sh 准备软件源 (内联版本)..."
+        
+        # --- 修改基本配置 ---
+        log_info "修改基本配置 (IP、主机名、密码)..."
+        sed -i "s/192.168.1.1/192.168.111.1/g" package/base-files/files/bin/config_generate
+        sed -i "s/hostname='.*'/hostname='WRT'/g" package/base-files/files/bin/config_generate
+        log_info "设置初始登录密码为空..."
+        shadow_file="package/base-files/files/etc/shadow"
+        if [ -f "$shadow_file" ]; then sed -i 's/^root:[^:]*:/root::/' "$shadow_file"; fi
+        log_success "基本配置修改完成"
+        
+        # --- 添加 feeds ---
+        log_info "添加 feeds..."
+        echo "src-git passwall_packages https://github.com/xiaorouji/openwrt-passwall-packages.git;main" >> "feeds.conf.default"
+        echo "src-git passwall_luci https://github.com/xiaorouji/openwrt-passwall.git;main" >> "feeds.conf.default"
+        echo "src-git passwall2 https://github.com/xiaorouji/openwrt-passwall2.git;main" >> "feeds.conf.default"
+        echo "src-git luci-app-openclash https://github.com/vernesong/OpenClash.git" >> "feeds.conf.default"
+        echo "src-git momo https://github.com/nikkinikki-org/OpenWrt-momo;main" >> "feeds.conf.default"
+        echo "src-git nikki https://github.com/nikkinikki-org/OpenWrt-nikki;main" >> "feeds.conf.default"
+        log_success "Feeds 添加完成"
+
+        # --- 克隆软件包 ---
+        log_info "克隆软件包..."
+        git clone "https://github.com/VIKINGYFY/homeproxy" package/homeproxy
+        git clone "https://github.com/sirpdboy/luci-app-adguardhome" package/luci-app-adguardhome
+        git clone "https://github.com/sirpdboy/luci-app-ddns-go" package/luci-app-ddns-go"
+        git clone "https://github.com/gdy666/luci-app-lucky" package/luci-app-lucky
+        git clone "https://github.com/EasyTier/luci-app-easytier" package/luci-app-easytier
+        git clone "https://github.com/lwb1978/openwrt-gecoosac" package/openwrt-gecoosac"
+        git clone "https://github.com/sirpdboy/luci-app-netdata" package/luci-app-netdata
+        git clone "https://github.com/sirpdboy/luci-app-netspeedtest" package/luci-app-netspeedtest
+        git clone "https://github.com/sirpdboy/luci-app-partexp" package/luci-app-partexp
+        git clone "https://github.com/sirpdboy/luci-app-taskplan" package/luci-app-taskplan
+        git clone "https://github.com/sbwml/luci-app-quickfile" package/luci-app-quickfile
+        git clone "https://github.com/tty228/luci-app-wechatpush" package/luci-app-wechatpush
+        git clone "https://github.com/destan19/OpenAppFilter" package/luci-app-oaf"
+        git clone "https://github.com/jerrykuku/luci-theme-argon" feeds/luci/themes/luci-theme-argon
+        git clone "https://github.com/eamonxg/luci-theme-aurora" feeds/luci/themes/luci-theme-aurora
+        git clone -b "v5" "https://github.com/sbwml/luci-app-mosdns" package/luci-app-mosdns
+        git clone "https://github.com/sbwml/luci-app-openlist2" package/luci-app-openlist2
+        git clone -b "25.x" "https://github.com/sbwml/packages_lang_golang" feeds/packages/lang/golang"
+        git clone "https://github.com/NONGFAH/luci-app-athena-led" package/luci-app-athena-led
+        chmod +x package/luci-app-athena-led/root/etc/init.d/athena_led package/luci-app-athena-led/root/usr/sbin/athena-led
+        git clone "https://github.com/asvow/luci-app-tailscale" package/luci-app-tailscale
+        git clone "https://github.com/lmq8267/luci-app-vnt" package/luci-app-vnt
+        git clone "https://github.com/kenzok8/small-package" small
+        log_success "软件包克隆完成"
+        
+        # --- 稀疏克隆 ---
+        log_info "稀疏克隆特殊软件包..."
+        git clone --depth=1 -b "ariang" --single-branch --filter=blob:none --sparse "https://github.com/laipeng668/packages"
+        cd packages && git sparse-checkout set net/ariang && mv -f net/ariang ../package && cd .. && rm -rf packages
+        git clone --depth=1 -b "frp" --single-branch --filter=blob:none --sparse "https://github.com/laipeng668/packages"
+        cd packages && git sparse-checkout set net/frp && mv -f net/frp ../package && cd .. && rm -rf packages
+        mkdir -p feeds/packages/net && mv -f package/frp feeds/packages/net/frp
+        git clone --depth=1 -b "frp" --single-branch --filter=blob:none --sparse "https://github.com/laipeng668/luci"
+        cd luci && git sparse-checkout set applications/luci-app-frpc applications/luci-app-frps && mv -f applications/luci-app-frpc ../package && mv -f applications/luci-app-frps ../package && cd .. && rm -rf luci
+        mkdir -p feeds/luci/applications && mv -f package/luci-app-frpc feeds/luci/applications/luci-app-frpc && mv -f package/luci-app-frps feeds/luci/applications/luci-app-frps
+        git clone --depth=1 -b "main" --single-branch --filter=blob:none --sparse "https://github.com/VIKINGYFY/packages"
+        cd packages && git sparse-checkout set luci-app-wolplus && mv -f luci-app-wolplus ../package && cd .. && rm -rf packages
+        log_success "稀疏克隆完成"
+
+        # --- 更新 feeds ---
+        log_info "更新 feeds..."
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+        log_success "Feeds 更新完成"
+
+        # --- 修改 Feeds 中的包 ---
+        log_info "修改 Feeds 中的包..."
+        tailscale_makefile="feeds/packages/net/tailscale/Makefile"
+        if [ -f "$tailscale_makefile" ]; then
+            sed -i '/\/etc\/init\.d\/tailscale/d;/\/etc\/config\/tailscale/d;' "$tailscale_makefile"
+        fi
+        log_success "Feeds 包修改完成"
+        
+        # --- 移除冲突的默认包 ---
+        log_info "移除冲突的默认包..."
+        sed -i "/attendedsysupgrade/d" $(find ./feeds/luci/collections/ -type f -name "Makefile" 2>/dev/null)
+        rm -rf feeds/luci/applications/luci-app-wechatpush
+        rm -rf feeds/luci/applications/luci-app-appfilter
+        rm -rf feeds/luci/applications/luci-app-frpc
+        rm -rf feeds/luci/applications/luci-app-frps
+        rm -rf feeds/luci/themes/luci-theme-argon
+        rm -rf feeds/packages/net/open-app-filter
+        rm -rf feeds/packages/net/adguardhome
+        rm -rf feeds/packages/net/ariang
+        rm -rf feeds/packages/net/frp
+        rm -rf feeds/packages/lang/golang
+        log_success "冲突包移除完成"
+        
+        # --- 修改 LuCI 编译署名 ---
+        log_info "修改 LuCI 编译署名..."
+        luci_status_file="feeds/luci/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js"
+        if [ -f "$luci_status_file" ]; then
+            sed -i "s/(\(luciversion || ''\))/(\1) + (' \/ Built by Mary')/g" "$luci_status_file"
+        fi
+        log_success "LuCI 编译署名修改完成"
+
+        log_success "diy.sh (内联版本) 执行完成"
         
         # Feeds 更新后包列表
         log_info "更新 feeds..."
