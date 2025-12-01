@@ -13,7 +13,7 @@
 #                               如果不提供，默认为当前目录下的 'openwrt' 文件夹。
 #
 #   选项:
-#     -m, --min-size SIZE     设置挂载点的最小可用空间 (GB), 默认: 30
+#     -m, --min-size SIZE     设置挂载点的最小可用空间 (GB), 默认: 20
 #     -d, --dirs "DIR1 DIR2"  指定需要链接的目录, 默认: "dl build_dir staging_dir tmp .ccache"
 #     -r, --revert            恢复操作，将软链接替换回原始目录
 #     -f, --force             强制执行，覆盖已存在的链接或目录
@@ -31,7 +31,7 @@ set -o pipefail
 
 # --- 默认配置 ---
 DEFAULT_SOURCE_DIR="openwrt"
-DEFAULT_MIN_SIZE_GB=30
+DEFAULT_MIN_SIZE_GB=20
 DEFAULT_DIRS_TO_LINK="dl build_dir staging_dir tmp .ccache"
 REVERT_MODE=false
 FORCE_MODE=false
