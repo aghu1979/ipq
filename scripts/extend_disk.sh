@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==============================================================================
-# OpenWrt/ImmortalWrt 磁盘空间扩展脚本 (优化版)
+# OpenWrt/ImmortalWrt 磁盘空间扩展脚本 (修复版)
 #
 # 功能:
 #   通过将大型构建目录软链接到容量更大且可写的磁盘挂载点，
@@ -13,14 +13,14 @@
 #                               如果不提供，默认为当前目录下的 'openwrt' 文件夹。
 #
 #   选项:
-#     -m, --min-size SIZE     设置挂载点的最小可用空间 (GB), 默认: 10
+#     -m, --min-size SIZE     设置挂载点的最小可用空间 (GB), 默认: 30
 #     -d, --dirs "DIR1 DIR2"  指定需要链接的目录, 默认: "dl build_dir staging_dir tmp .ccache"
 #     -r, --revert            恢复操作，将软链接替换回原始目录
 #     -f, --force             强制执行，覆盖已存在的链接或目录
 #
 # 作者: Mary
 # 日期：20251201
-# 版本: 2.1 - 修复挂载点选择逻辑，增加可写性检查
+# 版本: 2.2 - 修复日志污染变量和挂载点选择逻辑
 # ==============================================================================
 
 # --- 脚本开始 ---
@@ -31,7 +31,7 @@ set -o pipefail
 
 # --- 默认配置 ---
 DEFAULT_SOURCE_DIR="openwrt"
-DEFAULT_MIN_SIZE_GB=10
+DEFAULT_MIN_SIZE_GB=30
 DEFAULT_DIRS_TO_LINK="dl build_dir staging_dir tmp .ccache"
 REVERT_MODE=false
 FORCE_MODE=false
@@ -118,13 +118,14 @@ revert_links() {
     log "恢复操作完成"
 }
 
-# --- 优化：查找最佳且可写的挂载点 ---
+# --- 修复：查找最佳且可写的挂载点 ---
 find_best_writable_mount_point() {
     local min_size_kb=$((MIN_SIZE_GB * 1024 * 1024)) # 转换为 KB
     local best_mount=""
     local best_size=0
 
-    log "正在扫描可用且可写的挂载点 (最小空间: ${MIN_SIZE_GB}GB)..."
+    # 修复：将进度日志重定向到 stderr，避免污染函数返回值
+    log "正在扫描可用且可写的挂载点 (最小空间: ${MIN_SIZE_GB}GB)..." >&2
 
     # 使用 df -k 获取以KB为单位的精确大小，并逐行处理
     while read -r filesystem blocks used available use_percent mount; do
@@ -135,7 +136,8 @@ find_best_writable_mount_point() {
 
         # 检查空间和可写性
         if [ "$available" -gt "$min_size_kb" ] && [ -w "$mount" ]; then
-            log "发现候选挂载点: $mount (可用空间: $((available / 1024 / 1024))GB)"
+            # 修复：将候选日志也重定向到 stderr
+            log "发现候选挂载点: $mount (可用空间: $((available / 1024 / 1024))GB)" >&2
             if [ "$available" -gt "$best_size" ]; then
                 best_size="$available"
                 best_mount="$mount"
@@ -171,6 +173,7 @@ extend_disk() {
         # 回退策略：使用源码目录所在的挂载点
         TARGET_MOUNT_POINT=$(df "$SOURCE_DIR" | tail -1 | awk '{print $6}')
     else
+        # 修复：增加明确的日志，显示最终选择的挂载点
         log "找到最佳挂载点: $TARGET_MOUNT_POINT"
     fi
 
