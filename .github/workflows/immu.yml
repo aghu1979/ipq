@@ -13,7 +13,7 @@
 #
 # 作者: Mary
 # 日期：20251201
-# 版本: 2.0 - 企业级重构
+# 版本: 2.1 - 修复缓存顺序和函数作用域问题
 # ==============================================================================
 
 name: ImmortalWrt 自动编译系统
@@ -63,21 +63,16 @@ jobs:
         sudo timedatectl set-timezone "$TZ"
         log_success "环境初始化完成"
 
-    - name: 扩展磁盘空间
-      run: |
-        log_info "准备扩展磁盘空间..."
-        if [ -f "${{ env.EXTEND_DISK_SCRIPT }}" ]; then
-          chmod +x "${{ env.EXTEND_DISK_SCRIPT }}"
-          # 假设源码在当前工作目录下的 openwrt 文件夹
-          ${{ github.workspace }}/${{ env.EXTEND_DISK_SCRIPT }} openwrt
-          log_success "磁盘空间扩展完成"
-        else
-          log_warn "未找到磁盘扩展脚本，跳过此步骤"
-        fi
-
     - name: 检出源码
       id: checkout
       run: |
+        # --- 日志和颜色函数定义 ---
+        export TERM=xterm-256color
+        log_info() { echo -e "\033[34m[INFO]\033[0m $1"; }
+        log_success() { echo -e "\033[32m[OK]\033[0m $1"; }
+        log_warn() { echo -e "\033[33m[WARN]\033[0m $1"; }
+        log_error() { echo -e "\033[31m[FAIL]\033[0m $1"; }
+
         log_info "检出 ImmortalWrt 源码..."
         df -hT $GITHUB_WORKSPACE
         sudo mkdir -p /mnt/openwrt
@@ -92,7 +87,27 @@ jobs:
         echo "CACHE_DATE=$(date +"%Y-%m-%d-%H%M%S")" >> $GITHUB_ENV
         log_success "源码检出完成"
 
-    - name: 缓存工具链和下载目录
+    - name: 扩展磁盘空间 (关键步骤)
+      run: |
+        # --- 日志和颜色函数定义 ---
+        export TERM=xterm-256color
+        log_info() { echo -e "\033[34m[INFO]\033[0m $1"; }
+        log_success() { echo -e "\033[32m[OK]\033[0m $1"; }
+        log_warn() { echo -e "\033[33m[WARN]\033[0m $1"; }
+        log_error() { echo -e "\033[31m[FAIL]\033[0m $1"; }
+
+        log_info "准备扩展磁盘空间..."
+        if [ -f "${{ github.workspace }}/${{ env.EXTEND_DISK_SCRIPT }}" ]; then
+          chmod +x "${{ github.workspace }}/${{ env.EXTEND_DISK_SCRIPT }}"
+          # 在源码目录内执行，因为脚本会处理当前目录下的子目录
+          cd ${{ env.OPENWRT_PATH }}
+          ${{ github.workspace }}/${{ env.EXTEND_DISK_SCRIPT }} .
+          log_success "磁盘空间扩展完成"
+        else
+          log_warn "未找到磁盘扩展脚本，跳过此步骤"
+        fi
+
+    - name: 缓存工具链和下载目录 (关键步骤)
       uses: actions/cache@v4
       with:
         path: |
