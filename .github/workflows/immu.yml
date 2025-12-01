@@ -13,7 +13,7 @@
 #
 # 作者: Mary
 # 日期：20251201
-# 版本: 2.1 - 修复缓存顺序和函数作用域问题
+# 版本: 2.3 - 采用核心依赖+动态补充的混合策略
 # ==============================================================================
 
 name: ImmortalWrt 自动编译系统
@@ -48,6 +48,8 @@ jobs:
       uses: actions/checkout@v4
 
     - name: 初始化编译环境
+      env:
+        DEBIAN_FRONTEND: noninteractive
       run: |
         # --- 日志和颜色函数定义 ---
         export TERM=xterm-256color
@@ -58,10 +60,29 @@ jobs:
 
         log_info "初始化编译环境..."
         sudo -E apt-get -qq update
-        sudo -E apt-get -qq install $(curl -fsSL https://fastly.jsdelivr.net/gh/ophub/amlogic-s9xxx-openwrt@main/ubuntu2404-make-openwrt-depends)
+
+        # --- 阶段一：安装核心依赖，确保基础环境可用 ---
+        log_info "安装核心编译依赖..."
+        CORE_DEPS="build-essential libncurses5-dev libncursesw5-dev zlib1g-dev gawk git gettext libssl-dev xsltproc wget unzip python3 python3-distutils python3-pip python3-setuptools python3-wheel rsync"
+        sudo -E apt-get -qq install -y $CORE_DEPS
+        log_success "核心依赖安装完成"
+
+        # --- 阶段二：尝试从社区源补充依赖，实现优雅降级 ---
+        log_info "尝试从社区源 (ophub.org) 补充依赖..."
+        ADDITIONAL_DEPS_URL="https://ophub.org/ubuntu2404-make-openwrt-depends"
+        ADDITIONAL_DEPS=$(curl -fsSL "$ADDITIONAL_DEPS_URL" 2>/dev/null || echo "")
+
+        if [ -n "$ADDITIONAL_DEPS" ]; then
+          log_success "成功获取补充依赖列表"
+          sudo -E apt-get -qq install -y $ADDITIONAL_DEPS || log_warn "部分补充依赖安装失败，但核心依赖已满足，构建可继续"
+        else
+          log_warn "无法从 $ADDITIONAL_DEPS_URL 获取补充依赖列表 (可能是网络问题或服务不可用)。"
+          log_warn "构建将继续，但可能缺少某些非核心工具。"
+        fi
+
         sudo -E systemctl daemon-reload
         sudo timedatectl set-timezone "$TZ"
-        log_success "环境初始化完成"
+        log_success "编译环境初始化完成"
 
     - name: 检出源码
       id: checkout
@@ -270,7 +291,7 @@ jobs:
           - ⚽ 固件源码: ${{ env.REPO_URL }}
           - 💝 源码分支: ${{ env.REPO_BRANCH }}
           - 🌐 默认地址: **192.168.111.1**
-          - 🔑 默认密码: none
+          - 🔑 默认密码: **空**
           
           ### 🧊 固件版本
           - 固件编译前最后一次➦[主源码](${{ env.REPO_URL }})更新记录
