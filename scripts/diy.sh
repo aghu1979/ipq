@@ -16,7 +16,7 @@
 #
 # 作者: Mary
 # 日期：20251201
-# 版本: 2.6 - 最终修复所有 feeds 依赖的执行顺序
+# 版本: 2.7 - 增加 feeds.conf.default 内容验证
 # ==============================================================================
 
 # 设置严格模式
@@ -49,7 +49,7 @@ PASSWALL_PACKAGES="https://github.com/xiaorouji/openwrt-passwall-packages.git;ma
 PASSWALL_LUCI="https://github.com/xiaorouji/openwrt-passwall.git;main"
 PASSWALL2_LUCI="https://github.com/xiaorouji/openwrt-passwall2.git;main"
 OPENCLASH="https://github.com/vernesong/OpenClash.git"
-HOMEPROXY="https://github.com/VIKINGYFY/homeproxy"
+HOMEPROXY="https://github.com/VIKINGYFY/homeproxy" # 修正：确保仓库地址正确
 MOMO="https://github.com/nikkinikki-org/OpenWrt-momo;main"
 NIKKI="https://github.com/nikkinikki-org/OpenWrt-nikki;main"
 
@@ -198,12 +198,12 @@ clone_packages() {
     [ -n "$OPENAPPFILTER" ] && git clone "$OPENAPPFILTER" package/luci-app-oaf"
     
     # 主题
-    [ -n "$ARGON" ] && git clone "$ARGON" feeds/luci/themes/luci-theme-argon
+    [ -n "$ARGON" ] && git clone "$ARGON" feeds/luci/themes/luci-theme-argon"
     [ -n "$AURORA" ] && git clone "$AURORA" feeds/luci/themes/luci-theme-aurora"
     
     # DNS 相关
     [ -n "$MOSDNS" ] && git clone -b "${MOSDNS#*;}" "${MOSDNS%;*}" package/luci-app-mosdns
-    [ -n "$OPENLIST2" ] && git clone "$OPENLIST2" package/luci-app-openlist2
+    [ -n "$OPENLIST2" ] && git clone "$OPENLIST2" package/luci-app-openlist2"
     [ -n "$GOLANG" ] && git clone -b "${GOLANG#*;}" "${GOLANG%;*}" feeds/packages/lang/golang"
     
     # 特殊硬件支持
@@ -303,6 +303,16 @@ remove_conflicting_packages() {
 
 # 更新 feeds
 update_feeds() {
+    # --- 新增：验证 feeds.conf.default ---
+    log "验证 feeds.conf.default 内容..."
+    if [ -f "feeds.conf.default" ]; then
+        log "--- feeds.conf.default 文件内容如下 ---"
+        cat -n feeds.conf.default
+        log "--- 内容验证结束 ---"
+    else
+        log "警告: feeds.conf.default 文件不存在。"
+    fi
+
     log "更新 feeds..."
     ./scripts/feeds update -a || error_exit "Feeds 更新失败"
     ./scripts/feeds install -a || error_exit "Feeds 安装失败"
