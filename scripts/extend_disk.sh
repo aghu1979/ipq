@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==============================================================================
-# OpenWrt/ImmortalWrt 磁盘空间扩展脚本 (自动挂载版)
+# OpenWrt/ImmortalWrt 磁盘空间扩展脚本 (权限修复版)
 #
 # 功能:
 #   1. 优先使用已挂载的、空间充足的目录。
@@ -12,7 +12,7 @@
 #
 # 作者: Mary
 # 日期：20251201
-# 版本: 2.4 - 实现自动发现并挂载未使用磁盘
+# 版本: 2.5 - 修复挂载点权限判断和选择逻辑
 # ==============================================================================
 
 # --- 脚本开始 ---
@@ -163,26 +163,27 @@ find_best_mount_point() {
             continue
         fi
 
-        # 记录所有可写挂载点中空间最大的一个（用于回退）
-        if [ -w "$mount" ] && [ "$available" -gt "$fallback_size" ]; then
-            fallback_size="$available"
-            fallback_mount="$mount"
-        fi
-
-        # 检查是否满足最小空间要求
-        if [ "$available" -gt "$min_size_kb" ] && [ -w "$mount" ]; then
+        # 修复：优先记录满足条件的挂载点
+        if [ "$available" -gt "$min_size_kb" ]; then
             log "发现满足条件的挂载点: $mount (可用空间: $((available / 1024 / 1024))GB)" >&2
             if [ "$available" -gt "$best_size" ]; then
                 best_size="$available"
                 best_mount="$mount"
             fi
         fi
+
+        # 同时记录所有可写挂载点中空间最大的一个（用于回退）
+        if [ -w "$mount" ] && [ "$available" -gt "$fallback_size" ]; then
+            fallback_size="$available"
+            fallback_mount="$mount"
+        fi
+
     done < <(df -k | tail -n +2) # tail -n +2 跳过 df 的标题行
 
     if [ -n "$best_mount" ]; then
         echo "$best_mount"
     elif [ -n "$fallback_mount" ]; then
-        log "警告: 未找到满足 ${MIN_SIZE_GB}GB 的挂载点。将回退到空间最大的挂载点: $fallback_mount (可用空间: $((fallback_size / 1024 / 1024))GB)" >&2
+        log "警告: 未找到满足 ${MIN_SIZE_GB}GB 的挂载点。将回退到空间最大的可写挂载点: $fallback_mount (可用空间: $((fallback_size / 1024 / 1024))GB)" >&2
         echo "$fallback_mount"
     else
         echo ""
@@ -221,9 +222,11 @@ extend_disk() {
         log "最终选择存储位置: $TARGET_MOUNT_POINT"
     fi
     
-    # 5. 检查最终选择的挂载点是否可写
+    # 5. 修复：强制修改权限，确保可写
     if [ ! -w "$TARGET_MOUNT_POINT" ]; then
-        error_exit "选定的挂载点 '$TARGET_MOUNT_POINT' 不可写，请检查权限。"
+        log "警告: 选定的挂载点 '$TARGET_MOUNT_POINT' 不可写，正在尝试修改权限..."
+        sudo chown $(id -u):$(id -g) "$TARGET_MOUNT_POINT" || error_exit "修改 '$TARGET_MOUNT_POINT' 权限失败"
+        log "权限修改成功。"
     fi
 
     # 准备外部构建目录
