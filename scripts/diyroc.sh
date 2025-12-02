@@ -1,6 +1,29 @@
-# 修改默认IP & 固件名称 & 编译署名和时间
+# ==============================================================================
+# OpenWrt 自定义构建脚本 (diyroc.sh)
+#
+# 功能:
+#   1. 修改固件基本配置 (IP, 主机名)
+#   2. 准备第三方软件源 (添加/替换/移除软件包)
+#   3. 更新和安装 feeds
+#   4. 设置默认登录密码为空
+#
+# 使用方法:
+#   此脚本由 GitHub Actions 工作流调用。
+#   ./scripts/diyroc.sh
+#
+# 注意:
+#   此脚本负责准备软件源和基本设置。
+#   最终的软件包选择由 .config 文件控制。
+#
+# 作者: Mary
+# 日期：20251202
+# 版本: 3.0 - 确保默认登录密码为空
+# ==============================================================================
+
+# 修改默认IP & 固件名称 & 默认登录密码为空& 编译署名和时间
 sed -i 's/192.168.1.1/192.168.111.1/g' package/base-files/files/bin/config_generate
 sed -i "s/hostname='.*'/hostname='WRT'/g" package/base-files/files/bin/config_generate
+sed -i 's/^root:[^:]*:/root::/g' package/base-files/files/etc/shadow
 sed -i "s#_('Firmware Version'), (L\.isObject(boardinfo\.release) ? boardinfo\.release\.description + ' / ' : '') + (luciversion || ''),# \
             _('Firmware Version'),\n \
             E('span', {}, [\n \
@@ -16,7 +39,6 @@ sed -i "s#_('Firmware Version'), (L\.isObject(boardinfo\.release) ? boardinfo\.r
 
 # 移除luci-app-attendedsysupgrade软件包
 sed -i "/attendedsysupgrade/d" $(find ./feeds/luci/collections/ -type f -name "Makefile")
-
 
 # 移除要替换的包
 rm -rf feeds/luci/applications/luci-app-wechatpush
@@ -73,7 +95,7 @@ git clone --depth=1 https://github.com/xiaorouji/openwrt-passwall package/luci-a
 git clone --depth=1 https://github.com/xiaorouji/openwrt-passwall2 package/luci-app-passwall2
 git clone --depth=1 https://github.com/vernesong/OpenClash package/luci-app-openclash
 
-### Mary LUCI App###
+### Mary Luci App ###
 git clone https://github.com/sirpdboy/luci-app-adguardhome package/luci-app-adguardhome
 git clone https://github.com/sirpdboy/luci-app-ddns-go package/luci-app-ddns-go
 git clone https://github.com/sirpdboy/luci-app-netdata package/luci-app-netdata
@@ -92,6 +114,6 @@ git clone https://github.com/lmq8267/luci-app-vnt package/luci-app-vnt
 
 git clone https://github.com/kenzok8/small-package small
 
-
 ./scripts/feeds update -a
 ./scripts/feeds install -a
+
