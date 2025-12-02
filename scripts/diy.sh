@@ -182,28 +182,28 @@ clone_packages() {
     [ -n "$ADGUARDHOME" ] && git clone "$ADGUARDHOME" package/luci-app-adguardhome
     [ -n "$DDNS_GO" ] && git clone "$DDNS_GO" package/luci-app-ddns-go
     [ -n "$LUCKY" ] && git clone "$LUCKY" package/luci-app-lucky
-    [ -n "$EASYTIER" ] && git clone "$EASYTIER" package/luci-app-easytier"
-    [ -n "$GECOOSAC" ] && git clone "$GECOOSAC" package/openwrt-gecoosac"
+    [ -n "$EASYTIER" ] && git clone "$EASYTIER" package/luci-app-easytier
+    [ -n "$GECOOSAC" ] && git clone "$GECOOSAC" package/openwrt-gecoosac
     
     # 监控与测试工具
-    [ -n "$NETDATA" ] && git clone "$NETDATA" package/luci-app-netdata"
-    [ -n "$NETSPEEDTEST" ] && git clone "$NETSPEEDTEST" package/luci-app-netspeedtest"
+    [ -n "$NETDATA" ] && git clone "$NETDATA" package/luci-app-netdata
+    [ -n "$NETSPEEDTEST" ] && git clone "$NETSPEEDTEST" package/luci-app-netspeedtest
     
     # 系统管理工具
-    [ -n "$PARTEXP" ] && git clone "$PARTEXP" package/luci-app-partexp"
-    [ -n "$TASKPLAN" ] && git clone "$TASKPLAN" package/luci-app-taskplan"
-    [ -n "$QUICKFILE" ] && git clone "$QUICKFILE" package/luci-app-quickfile"
-    [ -n "$WECHATPUSH" ] && git clone "$WECHATPUSH" package/luci-app-wechatpush"
-    [ -n "$OPENAPPFILTER" ] && git clone "$OPENAPPFILTER" package/luci-app-oaf"
+    [ -n "$PARTEXP" ] && git clone "$PARTEXP" package/luci-app-partexp
+    [ -n "$TASKPLAN" ] && git clone "$TASKPLAN" package/luci-app-taskplan
+    [ -n "$QUICKFILE" ] && git clone "$QUICKFILE" package/luci-app-quickfile
+    [ -n "$WECHATPUSH" ] && git clone "$WECHATPUSH" package/luci-app-wechatpush
+    [ -n "$OPENAPPFILTER" ] && git clone "$OPENAPPFILTER" package/luci-app-oaf
     
     # 主题
-    [ -n "$ARGON" ] && git clone "$ARGON" feeds/luci/themes/luci-theme-argon"
-    [ -n "$AURORA" ] && git clone "$AURORA" feeds/luci/themes/luci-theme-aurora"
+    [ -n "$ARGON" ] && git clone "$ARGON" feeds/luci/themes/luci-theme-argon
+    [ -n "$AURORA" ] && git clone "$AURORA" feeds/luci/themes/luci-theme-aurora
     
     # DNS 相关
     [ -n "$MOSDNS" ] && git clone -b "${MOSDNS#*;}" "${MOSDNS%;*}" package/luci-app-mosdns
-    [ -n "$OPENLIST2" ] && git clone "$OPENLIST2" package/luci-app-openlist2"
-    [ -n "$GOLANG" ] && git clone -b "${GOLANG#*;}" "${GOLANG%;*}" feeds/packages/lang/golang"
+    [ -n "$OPENLIST2" ] && git clone "$OPENLIST2" package/luci-app-openlist2
+    [ -n "$GOLANG" ] && git clone -b "${GOLANG#*;}" "${GOLANG%;*}" feeds/packages/lang/golang
     
     # 特殊硬件支持
     [ -n "$ATHENA_LED" ] && git clone "$ATHENA_LED" package/luci-app-athena-led && chmod +x package/luci-app-athena-led/root/etc/init.d/athena_led package/luci-app-athena-led/root/usr/sbin/athena-led
