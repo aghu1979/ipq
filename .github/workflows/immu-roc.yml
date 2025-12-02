@@ -1,4 +1,4 @@
-name: Arthur&Athena&Taiyi-ImmortalWrt
+name: immu-Build
 
 on:
   workflow_dispatch:
