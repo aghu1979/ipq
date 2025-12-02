@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==============================================================================
-# OpenWrt 自定义构建脚本 (调试版)
+# OpenWrt 自定义构建脚本
 #
 # 功能:
 #   1. 修改固件基本配置
@@ -16,7 +16,7 @@
 #
 # 作者: Mary
 # 日期：20251201
-# 版本: 2.9-debug - 禁用复杂命令以进行调试
+# 版本: 2.10 - 修复所有语法错误
 # ==============================================================================
 
 # 设置严格模式
@@ -102,24 +102,26 @@ FRPC_LUCI_REPO="https://github.com/laipeng668/luci"
 modify_basic_config() {
     log "修改基本配置 (IP、主机名、密码)..."
     
-    # 暂时禁用 sed 命令以进行调试
-    # sed -i "s/192.168.1.1/$DEFAULT_IP/g" package/base-files/files/bin/config_generate || error_exit "修改默认 IP 失败"
-    # sed -i "s/hostname='.*'/hostname='$HOSTNAME'/g" package/base-files/files/bin/config_generate || error_exit "修改主机名失败"
+    # 修改默认 IP
+    sed -i "s/192.168.1.1/$DEFAULT_IP/g" package/base-files/files/bin/config_generate || error_exit "修改默认 IP 失败"
     
-    log "警告: 调试模式 - IP 和主机名修改已禁用"
+    # 修改主机名
+    sed -i "s/hostname='.*'/hostname='$HOSTNAME'/g" package/base-files/files/bin/config_generate || error_exit "修改主机名失败"
     
     # 修改初始登录密码为空
     log "设置初始登录密码为空..."
     local shadow_file="package/base-files/files/etc/shadow"
     if [ -f "$shadow_file" ]; then
-        # 暂时禁用 sed 命令以进行调试
-        # sed -i 's/^root:[^:]*:/root::/' "$shadow_file" || error_exit "修改登录密码失败"
-        log "警告: 调试模式 - 密码修改已禁用"
+        # 将root用户的密码字段清空
+        # 格式: root:<password_field>:...
+        # 修改为: root::...
+        sed -i 's/^root:[^:]*:/root::/' "$shadow_file" || error_exit "修改登录密码失败"
+        log "初始登录密码已设置为空"
     else
         log "警告: shadow 文件 '$shadow_file' 不存在，跳过修改登录密码。"
     fi
     
-    log "基本配置 (调试模式) 完成"
+    log "基本配置 (IP、主机名、密码) 修改完成"
 }
 
 # 修改 Feeds 中的包 (依赖 feeds update)
@@ -130,8 +132,8 @@ modify_feeds_packages() {
     if [ -n "$TAILSCALE" ]; then
         local tailscale_makefile="feeds/packages/net/tailscale/Makefile"
         if [ -f "$tailscale_makefile" ]; then
-            log "警告: 调试模式 - Tailscale Makefile 修改已禁用"
-            # sed -i '/\/etc\/init\.d\/tailscale/d;/\/etc\/config\/tailscale/d;' "$tailscale_makefile" || log "警告: 修改 Tailscale Makefile 失败，但构建可继续"
+            log "修改 Tailscale Makefile..."
+            sed -i '/\/etc\/init\.d\/tailscale/d;/\/etc\/config\/tailscale/d;' "$tailscale_makefile" || log "警告: 修改 Tailscale Makefile 失败，但构建可继续"
             log "Tailscale Makefile 修改完成"
         else
             log "警告: Tailscale Makefile '$tailscale_makefile' 不存在，跳过修改。"
@@ -148,8 +150,7 @@ modify_luci_signature() {
     local luci_status_file="feeds/luci/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js"
     
     if [ -f "$luci_status_file" ]; then
-        log "警告: 调试模式 - LuCI 编译署名修改已禁用"
-        # sed -i "s/(\(luciversion || ''\))/(\1) + (' \/ $BUILD_SIGNATURE')/g" "$luci_status_file" || error_exit "修改编译署名失败"
+        sed -i "s/(\(luciversion || ''\))/(\1) + (' \/ $BUILD_SIGNATURE')/g" "$luci_status_file" || error_exit "修改编译署名失败"
         log "LuCI 编译署名修改成功"
     else
         log "警告: LuCI 状态文件 '$luci_status_file' 不存在，跳过修改编译署名。"
@@ -187,7 +188,7 @@ clone_packages() {
     
     # 监控与测试工具
     [ -n "$NETDATA" ] && git clone "$NETDATA" package/luci-app-netdata
-    [ -n "$NETSPEEDTEST" ] && git clone "$NETSPEEDTEST" package/luci-app-netspeedtest
+    [ -n "$NETSPEEDTEST" ] && git clone "$NETSPEEDTEST" package/luci-app-netspeedtest"
     
     # 系统管理工具
     [ -n "$PARTEXP" ] && git clone "$PARTEXP" package/luci-app-partexp
@@ -272,9 +273,7 @@ remove_conflicting_packages() {
     log "移除冲突的默认包..."
     
     # 移除 luci-app-attendedsysupgrade
-    # 暂时禁用 sed 命令以进行调试
-    # sed -i "/attendedsysupgrade/d" $(find ./feeds/luci/collections/ -type f -name "Makefile" 2>/dev/null) || log "警告: 移除 luci-app-attendedsysupgrade 失败，可能文件不存在。"
-    log "警告: 调试模式 - attendedsysupgrade 移除已禁用"
+    sed -i "/attendedsysupgrade/d" $(find ./feeds/luci/collections/ -type f -name "Makefile" 2>/dev/null) || log "警告: 移除 luci-app-attendedsysupgrade 失败，可能文件不存在。"
     
     # 移除要替换的包
     local packages=(
@@ -319,7 +318,7 @@ update_feeds() {
 
 # 主函数
 main() {
-    log "开始 OpenWrt 自定义构建 (调试模式)..."
+    log "开始 OpenWrt 自定义构建..."
     
     # 1. 修改基本配置 (不依赖 feeds)
     modify_basic_config
@@ -345,7 +344,7 @@ main() {
     # 8. 修改 LuCI 编译署名 (必须在 feeds update 之后)
     modify_luci_signature
     
-    log "OpenWrt 自定义构建 (调试模式) 完成"
+    log "OpenWrt 自定义构建完成"
     log "注意: 最终编译的软件包由 .config 文件控制"
 }
 
