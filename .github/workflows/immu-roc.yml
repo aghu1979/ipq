@@ -1,3 +1,30 @@
+# ==============================================================================
+# OpenWrt 自动化构建工作流 (immu-roc)
+#
+# 功能:
+#   1. 初始化构建环境。
+#   2. 克隆 OpenWrt 源码。
+#   3. 加载自定义配置和执行 DIY 脚本。
+#   4. 生成 Luci 软件包变更报告。
+#   5. 下载依赖、编译固件。
+#   6. 整理并发布固件到 GitHub Release。
+#
+# 使用方法:
+#   此工作流由 GitHub Actions 在以下事件触发:
+#   - workflow_dispatch: 手动触发
+#   - workflow_call: 被其他工作流调用
+#
+# 注意:
+#   构建环境为 ubuntu-24.04。
+#   固件配置由 configs/immu.config 文件定义。
+#   自定义脚本由 scripts/diyroc.sh 定义。
+#   Luci 报告由 scripts/luci_report.sh 生成。
+#
+# 作者: Mary
+# 日期：20251202
+# 版本: 3.0 - 重构 Luci 报告功能，使用独立脚本
+# ==============================================================================
+
 name: immu-Build
 
 on:
@@ -10,7 +37,6 @@ env:
   REPO_URL: https://github.com/laipeng668/immortalwrt.git
   REPO_BRANCH: master
   CONFIG_FILE: configs/immu.config
-  # GENERAL_CONFIG_FILE: configs/General.config
   DIY_SCRIPT: scripts/diyroc.sh
   CLASH_KERNEL: amd64
   UPLOAD_BIN_DIR: false
@@ -105,11 +131,28 @@ jobs:
         cd $OPENWRT_PATH
         $GITHUB_WORKSPACE/$DIY_SCRIPT
 
+    - name: Generate Initial Luci Packages Report(生成初始Luci软件包报告)
+      run: |
+        cd $OPENWRT_PATH
+        # 保存执行DIY脚本后的.config作为初始快照
+        cp .config $GITHUB_WORKSPACE/initial.config
+
     - name: Download DL Package(下载DL软件包)
       run: |
         cat $CONFIG_FILE > $OPENWRT_PATH/.config
         cd $OPENWRT_PATH
         make defconfig
+        
+        # 保存make defconfig后的.config作为最终快照
+        cp .config $GITHUB_WORKSPACE/final.config
+        
+        # 调用独立脚本来生成报告
+        chmod +x $GITHUB_WORKSPACE/scripts/luci_report.sh
+        $GITHUB_WORKSPACE/scripts/luci_report.sh \
+          $GITHUB_WORKSPACE/initial.config \
+          $GITHUB_WORKSPACE/final.config \
+          $GITHUB_WORKSPACE/luci_packages_report.txt
+        
         make download -j$(nproc)
 
     - name: Compile Firmware(开始编译固件)
@@ -143,6 +186,10 @@ jobs:
         mv -f $OPENWRT_PATH/bin/packages/*/*/*.apk packages
         tar -zcf immu.Packages.tar.gz packages
         rm -rf packages feeds.buildinfo version.buildinfo sha256sums profiles.json
+        
+        # 复制Luci软件包报告到固件目录
+        cp $GITHUB_WORKSPACE/luci_packages_report.txt ./luci_packages_report.txt
+        
         echo "FIRMWARE_PATH=$PWD" >> $GITHUB_ENV
 
     - name: Upload Firmware To Artifact(将固件上传到Artifact)
@@ -174,6 +221,9 @@ jobs:
           - 固件内核版本：**${{ env.VERSION_KERNEL }}**
           - 固件编译前最后一次➦[主源码](${{ env.REPO_URL }})更新记录
           - ${{ env.VERSION_INFO }}
+          
+          ### 📦 Luci软件包变更报告
+          请查看固件包中的 `luci_packages_report.txt` 文件获取详细的Luci软件包变更信息。
 
     - name: Delete Old Cache(删除旧缓存)
       run: |
