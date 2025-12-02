@@ -1,18 +1,40 @@
-name: ImmortalWrt自动编译系统
+# ==============================================================================
+# ImmortalWrt 自动化编译工作流
+#
+# 功能:
+#   1. 自动化编译 ImmortalWrt 固件，支持多设备
+#   2. 集成磁盘空间扩展、高级缓存策略
+#   3. 生成 LuCI 软件包差异报告和设备清单
+#   4. 提供企业级的日志、错误控制和发布系统
+#
+# 触发方式:
+#   - 手动触发
+#   - 定时触发 (已注释，可按需启用)
+#
+# 作者: Mary
+# 日期：20251201
+# 版本: 2.7 - 修复内联命令语法错误
+# ==============================================================================
+
+name: ImmortalWrt 自动编译系统
 
 on:
   workflow_dispatch:
-  workflow_call:
+    inputs:
+      upload_bin_dir:
+        description: '是否上传整个 bin 目录 (调试用)'
+        required: false
+        default: 'false'
+        type: boolean
   # schedule:
-  #   - cron: 0 20 * * 4
+  #   - cron: 0 20 * * 4 # 每周四 UTC20:00 自动编译
 
 env:
   REPO_URL: https://github.com/laipeng668/immortalwrt.git
   REPO_BRANCH: master
   CONFIG_FILE: configs/immu.config
   DIY_SCRIPT: scripts/diy.sh
-  CLASH_KERNEL: amd64
-  UPLOAD_BIN_DIR: false
+  EXTEND_DISK_SCRIPT: scripts/extend_disk.sh
   FIRMWARE_RELEASE: true
   FIRMWARE_TAG: immu
   TZ: Asia/Shanghai
@@ -22,148 +44,275 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
 
-    - name: Initialization Environment(初始化环境)
+    - name: 初始化编译环境
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
-        sudo -E apt-get -y update
-        sudo -E apt-get -y install $(curl -fsSL ophub.org/ubuntu2404-make-openwrt-depends)
+        # --- 日志和颜色函数定义 ---
+        export TERM=xterm-256color
+        log_info() { echo -e "\033[34m[INFO]\033[0m $1"; }
+        log_success() { echo -e "\033[32m[OK]\033[0m $1"; }
+        log_warn() { echo -e "\033[33m[WARN]\033[0m $1"; }
+        log_error() { echo -e "\033[31m[FAIL]\033[0m $1"; }
+
+        log_info "初始化编译环境..."
+        sudo -E apt-get -qq update
+
+        # --- 阶段一：安装核心依赖，确保基础环境可用 ---
+        log_info "安装核心编译依赖..."
+        CORE_DEPS="build-essential libncurses5-dev libncursesw5-dev zlib1g-dev gawk git gettext libssl-dev xsltproc wget unzip python3 python3-pip python3-wheel rsync jq"
+        sudo -E apt-get -qq install -y $CORE_DEPS
+        log_success "核心依赖安装完成"
+
+        # --- 阶段二：尝试从社区源补充依赖，实现优雅降级 ---
+        log_info "尝试从社区源 (ophub.org) 补充依赖..."
+        ADDITIONAL_DEPS_URL="https://ophub.org/ubuntu2404-make-openwrt-depends"
+        ADDITIONAL_DEPS=$(curl -fsSL "$ADDITIONAL_DEPS_URL" 2>/dev/null || echo "")
+
+        if [ -n "$ADDITIONAL_DEPS" ]; then
+          log_success "成功获取补充依赖列表"
+          sudo -E apt-get -qq install -y $ADDITIONAL_DEPS || log_warn "部分补充依赖安装失败，但核心依赖已满足，构建可继续"
+        else
+          log_warn "无法从 $ADDITIONAL_DEPS_URL 获取补充依赖列表 (可能是网络问题或服务不可用)。"
+          log_warn "构建将继续，但可能缺少某些非核心工具。"
+        fi
+
         sudo -E systemctl daemon-reload
         sudo timedatectl set-timezone "$TZ"
+        log_success "编译环境初始化完成"
 
-    - name: Checkout(检出代码)
-      uses: actions/checkout@main
-
-    - name: Clone Source Code(克隆源代码)
+    - name: 检出源码
+      id: checkout
       run: |
+        # --- 日志和颜色函数定义 ---
+        export TERM=xterm-256color
+        log_info() { echo -e "\033[34m[INFO]\033[0m $1"; }
+        log_success() { echo -e "\033[32m[OK]\033[0m $1"; }
+        log_warn() { echo -e "\033[33m[WARN]\033[0m $1"; }
+        log_error() { echo -e "\033[31m[FAIL]\033[0m $1"; }
+
+        log_info "检出 ImmortalWrt 源码..."
         df -hT $GITHUB_WORKSPACE
         sudo mkdir -p /mnt/openwrt
         sudo chown -R $(id -u):$(id -g) /mnt/openwrt
         git clone --depth 1 -b $REPO_BRANCH --single-branch $REPO_URL /mnt/openwrt
         cd /mnt/openwrt
-        echo "OPENWRT_PATH=$PWD" >> $GITHUB_ENV
-        VERSION_INFO=$(git show -s --date=short --format="作者: Mary<br/>时间: %cd<br/>内容: %s<br/>hash: %H")
+        
+        # 设置环境变量供后续步骤使用
+        echo "OPENWRT_PATH=/mnt/openwrt" >> $GITHUB_ENV
+        VERSION_INFO=$(git show -s --date=short --format="作者: %an<br/>时间: %cd<br/>内容: %s<br/>Hash: %H")
         echo "VERSION_INFO=$VERSION_INFO" >> $GITHUB_ENV
-        VERSION_KERNEL=$(grep -oP 'LINUX_KERNEL_HASH-\K[0-9]+\.[0-9]+\.[0-9]+' target/linux/generic/kernel-6.12)
-        echo "VERSION_KERNEL=$VERSION_KERNEL" >> $GITHUB_ENV
+        echo "CACHE_DATE=$(date +"%Y-%m-%d-%H%M%S")" >> $GITHUB_ENV
+        log_success "源码检出完成"
 
-    - name: Generate Variables(生成变量)
+    - name: 扩展磁盘空间 (关键步骤)
       run: |
-        cp $CONFIG_FILE $OPENWRT_PATH/.config
-        cd $OPENWRT_PATH
-        make defconfig > /dev/null 2>&1
-        SOURCE_REPO="$(echo $REPO_URL | awk -F '/' '{print $(NF)}')"
-        echo "SOURCE_REPO=$SOURCE_REPO" >> $GITHUB_ENV
-        DEVICE_TARGET=$(cat .config | grep CONFIG_TARGET_BOARD | awk -F '"' '{print $2}')
-        echo "DEVICE_TARGET=$DEVICE_TARGET" >> $GITHUB_ENV
-        DEVICE_SUBTARGET=$(cat .config | grep CONFIG_TARGET_SUBTARGET | awk -F '"' '{print $2}')
-        echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> $GITHUB_ENV
-        echo "HASH=$(git log -1 --pretty=format:'%h')" >> $GITHUB_ENV
-        echo "CACHE_DATE=$(date +"%Y-%m-%d %H:%M:%S")" >> $GITHUB_ENV
+        # --- 日志和颜色函数定义 ---
+        export TERM=xterm-256color
+        log_info() { echo -e "\033[34m[INFO]\033[0m $1"; }
+        log_success() { echo -e "\033[32m[OK]\033[0m $1"; }
+        log_warn() { echo -e "\033[33m[WARN]\033[0m $1"; }
+        log_error() { echo -e "\033[31m[FAIL]\033[0m $1"; }
 
-    - name: Cache Toolchain(缓存工具链)
-      uses: actions/cache@main
+        log_info "准备扩展磁盘空间..."
+        if [ -f "${{ github.workspace }}/${{ env.EXTEND_DISK_SCRIPT }}" ]; then
+          chmod +x "${{ github.workspace }}/${{ env.EXTEND_DISK_SCRIPT }}"
+          # 在源码目录内执行，因为脚本会处理当前目录下的子目录
+          cd ${{ env.OPENWRT_PATH }}
+          ${{ github.workspace }}/${{ env.EXTEND_DISK_SCRIPT }} .
+          log_success "磁盘空间扩展完成"
+        else
+          log_warn "未找到磁盘扩展脚本，跳过此步骤"
+        fi
+
+    - name: 缓存工具链和下载目录 (关键步骤)
+      uses: actions/cache@v4
       with:
-        key: ${{ env.SOURCE_REPO }}-${{ env.REPO_BRANCH }}-${{ env.DEVICE_TARGET }}-${{ env.DEVICE_SUBTARGET }}-${{ env.HASH }} ${{ env.CACHE_DATE }}
-        restore-keys: ${{ env.SOURCE_REPO }}-${{ env.REPO_BRANCH }}-${{ env.DEVICE_TARGET }}-${{ env.DEVICE_SUBTARGET }}-
         path: |
           ${{ env.OPENWRT_PATH }}/.ccache
+          ${{ env.OPENWRT_PATH }}/dl
           ${{ env.OPENWRT_PATH }}/staging_dir
+        key: ${{ env.REPO_BRANCH }}-${{ hashFiles('configs/immu.config') }}-${{ env.CACHE_DATE }}
+        restore-keys: |
+          ${{ env.REPO_BRANCH }}-${{ hashFiles('configs/immu.config') }}-
 
-    - name: Refresh The Cache(刷新缓存)
+    - name: 加载自定义配置与生成报告
+      id: config
       run: |
-        if [ -d "$OPENWRT_PATH/staging_dir" ]; then
-          find "$OPENWRT_PATH/staging_dir" -type d -name "stamp" -not -path "*target*" | while read -r dir; do
-              find "$dir" -type f -exec touch {} +
-          done
-        fi
-  
-    - name: Load Custom Configuration(加载自定义配置)
-      run: |
-        chmod +x $DIY_SCRIPT
-        cd $OPENWRT_PATH
-        $GITHUB_WORKSPACE/$DIY_SCRIPT
+        # --- 日志和颜色函数定义 ---
+        export TERM=xterm-256color
+        log_info() { echo -e "\033[34m[INFO]\033[0m $1"; }
+        log_success() { echo -e "\033[32m[OK]\033[0m $1"; }
+        log_warn() { echo -e "\033[33m[WARN]\033[0m $1"; }
+        log_error() { echo -e "\033[31m[FAIL]\033[0m $1"; }
+        
+        cd ${{ env.OPENWRT_PATH }}
+        CONFIG_PATH="${{ github.workspace }}/${{ env.CONFIG_FILE }}"
+        
+        # 1. 提取设备名称
+        log_info "从配置文件中提取目标设备..."
+        DEVICES=$(grep "^CONFIG_TARGET_DEVICE_.*_DEVICE_.*=y" "$CONFIG_PATH" | sed 's/^CONFIG_TARGET_DEVICE_.*_DEVICE_\(.*\)=y/\1/' | sort -u | tr '\n' ' ')
+        echo "DEVICE_LIST=$DEVICES" >> $GITHUB_ENV
+        log_success "提取到设备: $DEVICES"
 
-    - name: Download DL Package(下载DL软件包)
-      run: |
-        cat $CONFIG_FILE > $OPENWRT_PATH/.config
-        cd $OPENWRT_PATH
+        # 2. 生成 LuCI 包差异报告
+        log_info "准备生成 LuCI 包差异报告..."
+        
+        # 初始包列表
+        grep "^CONFIG_PACKAGE_luci-app-.*=y" "$CONFIG_PATH" | sed 's/CONFIG_PACKAGE_\(.*\)=y/\1/' | sort > initial_luci.txt
+        
+        # 执行 diy.sh
+        log_info "执行 diy.sh 准备软件源..."
+        chmod +x "${{ github.workspace }}/${{ env.DIY_SCRIPT }}"
+        "${{ github.workspace }}/${{ env.DIY_SCRIPT }}"
+        
+        # Feeds 更新后包列表
+        log_info "更新 feeds..."
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+        grep "^CONFIG_PACKAGE_luci-app-.*=y" "$CONFIG_PATH" | sed 's/CONFIG_PACKAGE_\(.*\)=y/\1/' | sort > feeds_luci.txt
+        
+        # Defconfig 后最终包列表
+        log_info "运行 make defconfig..."
         make defconfig
-        make download -j$(nproc)
+        grep "^CONFIG_PACKAGE_luci-app-.*=y" "$CONFIG_PATH" | sed 's/CONFIG_PACKAGE_\(.*\)=y/\1/' | sort > final_luci.txt
+        
+        # 生成差异报告
+        REPORT_FILE="${{ github.workspace }}/luci_diff_report.md"
+        echo "## LuCI 软件包差异报告" > "$REPORT_FILE"
+        echo -e "\n此报告展示了在编译流程中，LuCI 应用包的变化情况。\n" >> "$REPORT_FILE"
+        
+        echo "### 1. Feeds 更新后新增的包" >> "$REPORT_FILE"
+        echo '```' >> "$REPORT_FILE"
+        comm -13 initial_luci.txt feeds_luci.txt >> "$REPORT_FILE" || log_warn "Feeds 更新后无新增包"
+        echo '```' >> "$REPORT_FILE"
 
-    - name: Compile Firmware(开始编译固件)
+        echo "### 2. make defconfig 后新增的包" >> "$REPORT_FILE"
+        echo '```' >> "$REPORT_FILE"
+        comm -13 feeds_luci.txt final_luci.txt >> "$REPORT_FILE" || log_warn "defconfig 后无新增包"
+        echo '```' >> "$REPORT_FILE"
+
+        echo "### 3. make defconfig 后移除的包" >> "$REPORT_FILE"
+        echo '```' >> "$REPORT_FILE"
+        comm -23 feeds_luci.txt final_luci.txt >> "$REPORT_FILE" || log_warn "defconfig 后无移除包"
+        echo '```' >> "$REPORT_FILE"
+
+        echo "### 4. 最终 LuCI 包清单" >> "$REPORT_FILE"
+        echo '```' >> "$REPORT_FILE"
+        cat final_luci.txt >> "$REPORT_FILE"
+        echo '```' >> "$REPORT_FILE"
+        
+        log_success "LuCI 差异报告已生成: luci_diff_report.md"
+        echo "REPORT_PATH=$REPORT_FILE" >> $GITHUB_ENV
+
+    - name: 编译固件
       id: compile
       run: |
-        cd $OPENWRT_PATH
-        echo -e "$(nproc) thread compile"
+        # --- 日志和颜色函数定义 ---
+        export TERM=xterm-256color
+        log_info() { echo -e "\033[34m[INFO]\033[0m $1"; }
+        log_success() { echo -e "\033[32m[OK]\033[0m $1"; }
+        log_warn() { echo -e "\033[33m[WARN]\033[0m $1"; }
+        log_error() { echo -e "\033[31m[FAIL]\033[0m $1"; }
+        
+        cd ${{ env.OPENWRT_PATH }}
+        log_info "开始下载所有源码包..."
+        make download -j$(nproc)
+        log_success "源码包下载完成"
+        
+        log_info "开始编译固件 (使用 $(nproc) 个线程)..."
         make -j$(nproc) || make -j1 || make -j1 V=s
+        log_success "固件编译成功"
         echo "status=success" >> $GITHUB_OUTPUT
         echo "DATE=$(date +"%Y-%m-%d %H:%M:%S")" >> $GITHUB_ENV
         echo "FILE_DATE=$(date +"%Y.%m.%d")" >> $GITHUB_ENV
 
-    - name: Check Space Usage(检查空间使用情况)
-      if: (!cancelled())
+    - name: 检查磁盘使用情况
+      if: always()
       run: df -hT
 
-    - name: Upload Bin Directory(上传固件)
-      if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
-      uses: actions/upload-artifact@main
-      with:
-        name: ${{ env.SOURCE_REPO }}-bin-${{ env.DEVICE_TARGET }}-${{ env.DEVICE_SUBTARGET }}-${{ env.FILE_DATE }}
-        path: ${{ env.OPENWRT_PATH }}/bin
-
-    - name: Organize Files(整理文件)
+    - name: 整理固件文件
       if: steps.compile.outputs.status == 'success'
       run: |
-        cd $OPENWRT_PATH/bin/targets/*/*
-        cp $OPENWRT_PATH/.config immu.config
-        mv config.buildinfo immu.config.buildinfo
-        mv immortalwrt-qualcommax-ipq60xx.manifest immu-ipq60xx.manifest
-        mv -f $OPENWRT_PATH/bin/packages/*/*/*.apk packages
-        tar -zcf immu.Packages.tar.gz packages
-        rm -rf packages feeds.buildinfo version.buildinfo sha256sums profiles.json
-        echo "FIRMWARE_PATH=$PWD" >> $GITHUB_ENV
+        # --- 日志和颜色函数定义 ---
+        export TERM=xterm-256color
+        log_info() { echo -e "\033[34m[INFO]\033[0m $1"; }
+        log_success() { echo -e "\033[32m[OK]\033[0m $1"; }
+        
+        log_info "整理和重命名固件文件..."
+        cd ${{ env.OPENWRT_PATH }}/bin/targets/*/*
+        
+        # 创建发布目录
+        RELEASE_DIR="firmware_${{ env.FILE_DATE }}"
+        mkdir -p "$RELEASE_DIR"
+        
+        # 复制通用文件
+        cp ${{ env.OPENWRT_PATH }}/.config "$RELEASE_DIR/immu.config"
+        cp config.buildinfo "$RELEASE_DIR/immu.config.buildinfo"
+        if [ -f "*.manifest" ]; then
+          cp *.manifest "$RELEASE_DIR/"
+        fi
+        
+        # 循环处理每个设备的固件
+        for device in ${{ env.DEVICE_LIST }}; do
+          log_info "处理设备: $device"
+          # 查找并重命名固件
+          find . -maxdepth 1 -name "*${device}*" -type f -not -name "*.manifest" -exec cp {} "$RELEASE_DIR/immu_${device}_{}.img" \;
+        done
+        
+        # 打包所有产物
+        tar -zcf "${RELEASE_DIR}.tar.gz" "$RELEASE_DIR"
+        echo "FIRMWARE_PATH=${{ github.workspace }}/${RELEASE_DIR}.tar.gz" >> $GITHUB_ENV
+        log_success "固件整理完成: ${RELEASE_DIR}.tar.gz"
 
-    - name: Upload Firmware To Artifact(将固件上传到Artifact)
-      if: steps.compile.outputs.status == 'success' && env.FIRMWARE_RELEASE != 'true'
-      uses: actions/upload-artifact@main
+    - name: 上传固件到 Artifacts
+      if: steps.compile.outputs.status == 'success' && github.event.inputs.upload_bin_dir == 'true'
+      uses: actions/upload-artifact@v4
       with:
-        name: ${{ env.SOURCE_REPO }}-firmware-${{ env.DEVICE_TARGET }}-${{ env.DEVICE_SUBTARGET }}-${{ env.FILE_DATE }}
-        path: ${{ env.FIRMWARE_PATH }}
+        name: OpenWrt_bin_${{ env.FILE_DATE }}
+        path: ${{ env.OPENWRT_PATH }}/bin
 
-    - name: Upload Firmware To Release(发布固件)
+    - name: 上传固件到 Release
       if: steps.compile.outputs.status == 'success' && env.FIRMWARE_RELEASE == 'true'
-      uses: ncipollo/release-action@main
+      uses: ncipollo/release-action@v1
       with:
         name: ${{ env.DATE }} for ${{ env.FIRMWARE_TAG }}
         allowUpdates: true
         tag: ${{ env.FIRMWARE_TAG }}
-        token: ${{ secrets.GITHUB_TOKEN }}
-        artifacts: ${{ env.FIRMWARE_PATH }}/*
+        artifacts: ${{ env.FIRMWARE_PATH }}
         body: |
-          **This is OpenWrt Firmware for ${{ env.FIRMWARE_TAG }}**
+          **这是为 ${{ env.FIRMWARE_TAG }} 平台编译的 ImmortalWrt 固件**
+          
           ### 📒 固件信息
-          - 这是开启全功能NSS的6.12内核固件，默认主题为Argon；该固件在ImmortalWrt的基础上，添加了若干工具，具体详见对应机型的config。
           - 💻 这是 ${{ env.FIRMWARE_TAG }} 平台使用的 OpenWrt 固件
           - ⚽ 固件源码: ${{ env.REPO_URL }}
           - 💝 源码分支: ${{ env.REPO_BRANCH }}
           - 🌐 默认地址: **192.168.111.1**
-          - 🔑 默认密码: none
+          - 🔑 默认密码: **空**
+          
           ### 🧊 固件版本
-          - 固件内核版本：**${{ env.VERSION_KERNEL }}**
           - 固件编译前最后一次➦[主源码](${{ env.REPO_URL }})更新记录
           - ${{ env.VERSION_INFO }}
+          
+          ### 📦 包含设备
+          - ${{ env.DEVICE_LIST }}
+          
+          ---
+          
+          ${{ steps.config.outputs.REPORT_PATH }}
+        token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Delete Old Cache(删除旧缓存)
+    - name: 清理旧缓存
+      if: always()
       run: |
-        # 获取缓存列表并删除
-        gh cache list --key ${{ env.SOURCE_REPO }}-${{ env.REPO_BRANCH }}-${{ env.DEVICE_TARGET }}-${{ env.DEVICE_SUBTARGET }}- --json key --jq '.[] | .key' | while read -r key; do
+        # 安装 gh cli
+        sudo apt-get update && sudo apt-get install -y gh
+        # 获取并删除旧缓存
+        gh cache list --key ${{ env.REPO_BRANCH }}-${{ hashFiles('configs/immu.config') }}- --json key --jq '.[] | .key' | while read -r key; do
           gh cache delete "$key"
         done
-        # 输出缓存状态
-        echo "========cache status========"
-        echo "ccache: $(du -sh $OPENWRT_PATH/.ccache | cut -f 1)"
-        echo "staging: $(du -sh $OPENWRT_PATH/staging_dir | cut -f 1)"
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
