@@ -5,7 +5,7 @@
 #   1. 初始化构建环境。
 #   2. 克隆 OpenWrt 源码。
 #   3. 加载自定义配置和执行 DIY 脚本。
-#   4. 生成 Luci 软件包变更报告。
+#   4. 生成三阶段 Luci 软件包变更报告。
 #   5. 下载依赖、编译固件。
 #   6. 整理并发布固件到 GitHub Release。
 #
@@ -22,7 +22,7 @@
 #
 # 作者: Mary
 # 日期：20251202
-# 版本: 3.0 - 重构 Luci 报告功能，使用独立脚本
+# 版本: 3.3 - 实现三阶段 Luci 软件包对比报告
 # ==============================================================================
 
 name: immu-Build
@@ -90,9 +90,11 @@ jobs:
 
     - name: Generate Variables(生成变量)
       run: |
-        cp $CONFIG_FILE $OPENWRT_PATH/.config
         cd $OPENWRT_PATH
+        # 准备初始配置
+        cp $GITHUB_WORKSPACE/$CONFIG_FILE .config
         make defconfig > /dev/null 2>&1
+        
         SOURCE_REPO="$(echo $REPO_URL | awk -F '/' '{print $(NF)}')"
         echo "SOURCE_REPO=$SOURCE_REPO" >> $GITHUB_ENV
         DEVICE_TARGET=$(cat .config | grep CONFIG_TARGET_BOARD | awk -F '"' '{print $2}')
@@ -119,40 +121,38 @@ jobs:
           done
         fi
 
-    - name: Install Feeds(安装feeds)
+    - name: Install Feeds and Load Custom Config(安装Feeds并加载自定义配置)
       run: |
         cd $OPENWRT_PATH
+        
+        # --- 状态 1: 保存初始 immu.config ---
+        cp $GITHUB_WORKSPACE/$CONFIG_FILE $GITHUB_WORKSPACE/initial_immu.config
+        
         ./scripts/feeds update -a
-        ./scripts/feeds install -a
-  
-    - name: Load Custom Configuration(加载自定义配置)
-      run: |
-        chmod +x $DIY_SCRIPT
-        cd $OPENWRT_PATH
+        
+        # --- 状态 2: 执行 DIY 脚本后 ---
+        chmod +x $GITHUB_WORKSPACE/$DIY_SCRIPT
         $GITHUB_WORKSPACE/$DIY_SCRIPT
+        cp .config $GITHUB_WORKSPACE/post_diy.config
+        
+        # --- 状态 3: 安装 feeds 和 defconfig 后 ---
+        ./scripts/feeds install -a
+        make defconfig
+        cp .config $GITHUB_WORKSPACE/final_defconfig.config
 
-    - name: Generate Initial Luci Packages Report(生成初始Luci软件包报告)
+    - name: Generate 3-Stage Luci Packages Report(生成三阶段Luci软件包报告)
       run: |
-        cd $OPENWRT_PATH
-        # 保存执行DIY脚本后的.config作为初始快照
-        cp .config $GITHUB_WORKSPACE/initial.config
+        # 调用独立的三阶段报告脚本
+        chmod +x $GITHUB_WORKSPACE/scripts/luci_report.sh
+        $GITHUB_WORKSPACE/scripts/luci_report.sh \
+          $GITHUB_WORKSPACE/initial_immu.config \
+          $GITHUB_WORKSPACE/post_diy.config \
+          $GITHUB_WORKSPACE/final_defconfig.config \
+          $GITHUB_WORKSPACE/luci_packages_report.txt
 
     - name: Download DL Package(下载DL软件包)
       run: |
-        cat $CONFIG_FILE > $OPENWRT_PATH/.config
         cd $OPENWRT_PATH
-        make defconfig
-        
-        # 保存make defconfig后的.config作为最终快照
-        cp .config $GITHUB_WORKSPACE/final.config
-        
-        # 调用独立脚本来生成报告
-        chmod +x $GITHUB_WORKSPACE/scripts/luci_report.sh
-        $GITHUB_WORKSPACE/scripts/luci_report.sh \
-          $GITHUB_WORKSPACE/initial.config \
-          $GITHUB_WORKSPACE/final.config \
-          $GITHUB_WORKSPACE/luci_packages_report.txt
-        
         make download -j$(nproc)
 
     - name: Compile Firmware(开始编译固件)
@@ -223,7 +223,9 @@ jobs:
           - ${{ env.VERSION_INFO }}
           
           ### 📦 Luci软件包变更报告
-          请查看固件包中的 `luci_packages_report.txt` 文件获取详细的Luci软件包变更信息。
+          本次构建生成了详细的三阶段 Luci 软件包变更报告。
+          - **报告内容**: 包含了 `immu.config` -> `diyroc.sh` -> `feeds install & defconfig` 三个阶段的详细对比。
+          - **查看位置**: 请下载固件包，查看其中的 `luci_packages_report.txt` 文件。
 
     - name: Delete Old Cache(删除旧缓存)
       run: |
