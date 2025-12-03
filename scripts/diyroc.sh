@@ -115,6 +115,4 @@ git clone https://github.com/lmq8267/luci-app-vnt package/luci-app-vnt
 
 git clone https://github.com/kenzok8/small-package small
 
-./scripts/feeds update -a
-./scripts/feeds install -a
 
