@@ -22,7 +22,7 @@
 #
 # 作者: Mary
 # 日期：20251202
-# 版本: 3.3 - 实现三阶段 Luci 软件包对比报告
+# 版本: 3.4 - 修复构建流程，增加健壮性，集成三阶段报告
 # ==============================================================================
 
 name: immu-Build
@@ -128,21 +128,23 @@ jobs:
         # --- 状态 1: 保存初始 immu.config ---
         cp $GITHUB_WORKSPACE/$CONFIG_FILE $GITHUB_WORKSPACE/initial_immu.config
         
+        # 应用用户配置并解析依赖，确保 DIY 脚本在正确的配置环境中运行
+        cp $GITHUB_WORKSPACE/$CONFIG_FILE .config
         ./scripts/feeds update -a
+        ./scripts/feeds install -a
         
         # --- 状态 2: 执行 DIY 脚本后 ---
         chmod +x $GITHUB_WORKSPACE/$DIY_SCRIPT
         $GITHUB_WORKSPACE/$DIY_SCRIPT
         cp .config $GITHUB_WORKSPACE/post_diy.config
-        
-        # --- 状态 3: 安装 feeds 和 defconfig 后 ---
-        ./scripts/feeds install -a
+
+        # --- 状态 3: 最终 defconfig ---
         make defconfig
         cp .config $GITHUB_WORKSPACE/final_defconfig.config
 
     - name: Generate 3-Stage Luci Packages Report(生成三阶段Luci软件包报告)
       run: |
-        # 调用独立的三阶段报告脚本
+        # 调用更新后的报告脚本
         chmod +x $GITHUB_WORKSPACE/scripts/luci_report.sh
         $GITHUB_WORKSPACE/scripts/luci_report.sh \
           $GITHUB_WORKSPACE/initial_immu.config \
@@ -182,10 +184,27 @@ jobs:
         cd $OPENWRT_PATH/bin/targets/*/*
         cp $OPENWRT_PATH/.config immu.config
         mv config.buildinfo immu.config.buildinfo
-        mv immortalwrt-qualcommax-ipq60xx.manifest immortalwrt-qualcommax-ipq60xx-immu.manifest
-        mv -f $OPENWRT_PATH/bin/packages/*/*/*.apk packages
-        tar -zcf immu.Packages.tar.gz packages
-        rm -rf packages feeds.buildinfo version.buildinfo sha256sums profiles.json
+        
+        # 检查 manifest 文件是否存在，如果不存在则跳过重命名并发出警告
+        if [ -f "immortalwrt-qualcommax-ipq60xx.manifest" ]; then
+          mv immortalwrt-qualcommax-ipq60xx.manifest immortalwrt-qualcommax-ipq60xx-immu.manifest
+        else
+          echo "警告: immortalwrt-qualcommax-ipq60xx.manifest 文件未找到，跳过重命名。"
+        fi
+        
+        # 尝试移动 .apk 文件，如果目录不存在则跳过
+        if [ -d "$OPENWRT_PATH/bin/packages" ]; then
+          mv -f $OPENWRT_PATH/bin/packages/*/*/*.apk packages 2>/dev/null || echo "警告: 未找到 .apk 文件或移动失败。"
+          if [ -d "packages" ]; then
+            tar -zcf immu.Packages.tar.gz packages
+            rm -rf packages
+          fi
+        else
+          echo "警告: $OPENWRT_PATH/bin/packages 目录未找到，跳过 .apk 文件处理。"
+        fi
+        
+        # 尝试删除其他文件，忽略文件不存在的错误
+        rm -f feeds.buildinfo version.buildinfo sha256sums profiles.json
         
         # 复制Luci软件包报告到固件目录
         cp $GITHUB_WORKSPACE/luci_packages_report.txt ./luci_packages_report.txt
