@@ -16,7 +16,7 @@
 #
 # 作者: Mary
 # 日期：20251202
-# 版本: 3.2 - 移除 feeds 命令，由工作流统一控制
+# 版本: 3.3 - 修复 golang 包依赖问题，避免破坏 feeds 内部结构
 # ==============================================================================
 
 # 在任何命令失败时立即退出
@@ -62,7 +62,7 @@ rm -rf \
     feeds/packages/net/adguardhome \
     feeds/packages/net/ariang \
     feeds/packages/net/frp \
-    feeds/packages/lang/golang \
+    # feeds/packages/lang/golang \  # <-- 从这里移除
     feeds/packages/net/{xray-core,v2ray-geodata,sing-box,chinadns-ng,dns2socks,hysteria,ipt2socks,microsocks,naiveproxy,shadowsocks-libev,shadowsocks-rust,shadowsocksr-libev,simple-obfs,tcping,trojan-plus,tuic-client,v2ray-plugin,xray-plugin,geoview,shadow-tls} \
     feeds/luci/applications/luci-app-passwall \
     feeds/luci/applications/luci-app-openclash \
@@ -112,7 +112,7 @@ git clone https://github.com/nikkinikki-org/OpenWrt-nikki package/luci-app-nikki
 
 # 其他工具和插件
 git clone https://github.com/VIKINGYFY/packages package/vikingyfy-packages &
-git clone https://github.com/sbwml/packages_lang_golang package/lang_golang &
+git clone https://github.com/sbwml/packages_lang_golang package/lang_golang & # <-- 修改为克隆到 package/ 目录
 git clone https://github.com/sbwml/luci-app-openlist2 package/luci-app-openlist2 &
 git clone https://github.com/gdy666/luci-app-lucky package/luci-app-lucky &
 git clone https://github.com/tty228/luci-app-wechatpush package/luci-app-wechatpush &
