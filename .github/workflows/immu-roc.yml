@@ -22,7 +22,7 @@
 #
 # 作者: Mary
 # 日期：20251202
-# 版本: 3.4 - 修复构建流程，增加健壮性，集成三阶段报告
+# 版本: 3.5 - 修复致命的执行顺序错误，确保用户软件包被正确编译
 # ==============================================================================
 
 name: immu-Build
@@ -126,20 +126,26 @@ jobs:
         cd $OPENWRT_PATH
         
         # --- 状态 1: 保存初始 immu.config ---
-        cp $GITHUB_WORKSPACE/$CONFIG_FILE $GITHUB_WORKSPACE/initial_immu.config
-        
-        # 应用用户配置并解析依赖，确保 DIY 脚本在正确的配置环境中运行
-        cp $GITHUB_WORKSPACE/$CONFIG_FILE .config
+        cp $GITHUB_WORKSPACE/$CONFIG_FILE $GITHUB_WORKSPACE/initial.config
+
+        # 1. 更新 feeds 索引
         ./scripts/feeds update -a
-        ./scripts/feeds install -a
-        
-        # --- 状态 2: 执行 DIY 脚本后 ---
+
+        # 2. 执行 DIY 脚本，准备所有自定义软件源
         chmod +x $GITHUB_WORKSPACE/$DIY_SCRIPT
         $GITHUB_WORKSPACE/$DIY_SCRIPT
-        cp .config $GITHUB_WORKSPACE/post_diy.config
 
-        # --- 状态 3: 最终 defconfig ---
+        # 3. 应用用户配置并安装所有软件包 (包括自定义的)
+        cp $GITHUB_WORKSPACE/$CONFIG_FILE .config
+        ./scripts/feeds install -a
+
+        # --- 状态 2: 保存 feeds install 后的配置 ---
+        cp .config $GITHUB_WORKSPACE/post_feeds_install.config
+
+        # 4. 最终生成完整的配置文件
         make defconfig
+
+        # --- 状态 3: 保存最终配置 ---
         cp .config $GITHUB_WORKSPACE/final_defconfig.config
 
     - name: Generate 3-Stage Luci Packages Report(生成三阶段Luci软件包报告)
@@ -147,8 +153,8 @@ jobs:
         # 调用更新后的报告脚本
         chmod +x $GITHUB_WORKSPACE/scripts/luci_report.sh
         $GITHUB_WORKSPACE/scripts/luci_report.sh \
-          $GITHUB_WORKSPACE/initial_immu.config \
-          $GITHUB_WORKSPACE/post_diy.config \
+          $GITHUB_WORKSPACE/initial.config \
+          $GITHUB_WORKSPACE/post_feeds_install.config \
           $GITHUB_WORKSPACE/final_defconfig.config \
           $GITHUB_WORKSPACE/luci_packages_report.txt
 
@@ -243,7 +249,7 @@ jobs:
           
           ### 📦 Luci软件包变更报告
           本次构建生成了详细的三阶段 Luci 软件包变更报告。
-          - **报告内容**: 包含了 `immu.config` -> `diyroc.sh` -> `feeds install & defconfig` 三个阶段的详细对比。
+          - **报告内容**: 包含了 `immu.config` -> `feeds install` -> `defconfig` 三个阶段的详细对比。
           - **查看位置**: 请下载固件包，查看其中的 `luci_packages_report.txt` 文件。
 
     - name: Delete Old Cache(删除旧缓存)
